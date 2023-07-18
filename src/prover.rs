@@ -1,13 +1,11 @@
 use std::time::Duration;
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
-
 use ethers::providers::Provider;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
 use zkevm::prover::Prover;
+use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
 
 // proveRequest
 #[derive(Serialize, Deserialize, Debug)]
@@ -16,7 +14,7 @@ pub struct ProveRequest {
     pub rpc: String,
 }
 
-/// Generate AggCircuitProof for blcok trace.
+/// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     //Create prover
     let mut prover = Prover::from_fpath(FS_PROVE_PARAMS, FS_PROVE_SEED);
