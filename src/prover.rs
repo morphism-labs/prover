@@ -19,6 +19,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     //Create prover
     let mut prover = Prover::from_fpath(FS_PROVE_PARAMS, FS_PROVE_SEED);
     loop {
+        thread::sleep(Duration::from_millis(2000));
+
         // Step1. pop request from queue
         let prove_request = match prove_queue.lock().await.pop() {
             Some(req) => req,
@@ -62,7 +64,5 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         let mut proof_path =
             PathBuf::from(FS_PROOF).join(format!("agg-proof#block#{}", prove_request.block_num));
         proof.write_to_dir(&mut proof_path);
-
-        thread::sleep(Duration::from_millis(2000))
     }
 }
