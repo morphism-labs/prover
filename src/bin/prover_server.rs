@@ -13,6 +13,12 @@ use tower_http::trace::TraceLayer;
 use zkevm_prover::prover::{prove_for_queue, ProveRequest};
 use zkevm_prover::utils::FS_PROOF;
 
+pub struct BaseResult {
+    pub error_msg: String,
+    pub error_code: String,
+    pub result_value: String,
+}
+
 // Main async function to start prover service.
 // 1. Initializes environment.
 // 2. Spawns management server.
@@ -77,6 +83,10 @@ async fn add_pending_req(
         return String::from("invalid rpc url");
     }
 
+    let proof = query_proof(prove_request.block_num.to_string()).await;
+    if proof.is_empty() {
+        return String::from("there are already proven results");
+    }
     // Add request to queue
     queue.lock().await.push(prove_request);
 

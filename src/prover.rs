@@ -42,7 +42,10 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         .await
         {
             Some(traces) => traces,
-            None => continue,
+            None => {
+                log::info!("No trace obtained for block: {:#?}", prove_request.block_num);
+                continue;
+            },
         };
 
         // Step3. start prove
@@ -61,8 +64,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         log::info!("end prove, block num is: {:#?}", prove_request.block_num);
 
         // Step4. save proof
-        let mut proof_path =
+        let mut proof_save_path =
             PathBuf::from(FS_PROOF).join(format!("agg-proof#block#{}", prove_request.block_num));
-        proof.write_to_dir(&mut proof_path);
+        proof.write_to_dir(&mut proof_save_path);
     }
 }

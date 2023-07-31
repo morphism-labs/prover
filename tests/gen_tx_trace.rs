@@ -26,7 +26,7 @@ async fn test() -> Result<(), Box<dyn Error>> {
 }
 
 // Call a contract.
-async fn call() -> Result<(), Box<dyn Error>> {
+pub async fn call() -> Result<(), Box<dyn Error>> {
     let provider: Provider<Http> = Provider::<Http>::try_from("http://127.0.0.1:8569")?;
     let wallet: LocalWallet = Wallet::from_str(PRIVATE_KEY)?;
 
@@ -51,7 +51,7 @@ async fn call() -> Result<(), Box<dyn Error>> {
 }
 
 // Deploy a contract.
-async fn deploy() -> Result<(), Box<dyn Error>> {
+pub async fn deploy() -> Result<(), Box<dyn Error>> {
     let provider: Provider<Http> = Provider::<Http>::try_from("http://127.0.0.1:8569")?;
     let wallet: LocalWallet = Wallet::from_str(PRIVATE_KEY)?;
 
@@ -61,9 +61,9 @@ async fn deploy() -> Result<(), Box<dyn Error>> {
     ));
     // let factory = ContractFactory::new(abi, bytecode, client.clone());
 
-    let a: u64 = 10;
+    let initial_supply: u64 = 10;
 
-    let tx = TestZkEVM::deploy(signer, a.pow(18))?.legacy();
+    let tx = TestZkEVM::deploy(signer, initial_supply.pow(18))?.legacy();
     let contract = tx.send().await;
 
     match contract {
