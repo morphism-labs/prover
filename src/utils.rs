@@ -5,15 +5,14 @@ pub const FS_PROVE_PARAMS: &'static str = "prove_params";
 pub const FS_PROVE_SEED: &'static str = "prove_seed";
 pub const FS_PROOF: &'static str = "proof";
 
-
-// Fetches block traces by provider 
+// Fetches block traces by provider
 pub async fn get_block_traces_by_number(
     provider: &Provider<Http>,
     block_start: u64,
     block_end: u64,
 ) -> Option<Vec<BlockTrace>> {
     let mut block_traces: Vec<BlockTrace> = Vec::new();
-    for i in block_start..block_end {
+    for i in block_start..block_end + 1 {
         log::info!("zkevm-prover: requesting trace of block {i}");
         let result = provider
             .request("scroll_getBlockTraceByNumberOrHash", [format!("{i:#x}")])

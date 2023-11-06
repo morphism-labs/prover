@@ -1,4 +1,3 @@
-extern crate types as prove_types;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider};
 use ethers::signers::Wallet;

@@ -74,7 +74,7 @@ async fn add_pending_req(
     };
 
     // Verify block number is greater than 0
-    if prove_request.block_num == 0 {
+    if prove_request.block_num_start == 0 || prove_request.block_num_end == 0 {
         return String::from("block_num should be greater than 0");
     }
 
@@ -83,7 +83,7 @@ async fn add_pending_req(
         return String::from("invalid rpc url");
     }
 
-    let proof = query_proof(prove_request.block_num.to_string()).await;
+    let proof = query_proof(prove_request.block_num_start.to_string()).await;
     if proof.is_empty() {
         return String::from("there are already proven results");
     }
@@ -125,7 +125,8 @@ async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>
 #[tokio::test]
 async fn test() {
     let request = ProveRequest {
-        block_num: 4,
+        block_num_start: 4,
+        block_num_end: 4,
         rpc: String::from("127.0.0.1:8569"),
     };
     let info = serde_json::to_string(&request);
