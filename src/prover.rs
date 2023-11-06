@@ -1,11 +1,10 @@
+use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
+use ethers::providers::Provider;
+use prover::zkevm::Prover;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
-use ethers::providers::Provider;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use zkevm::prover::Prover;
-use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
 
 // proveRequest
 #[derive(Serialize, Deserialize, Debug)]
@@ -17,7 +16,7 @@ pub struct ProveRequest {
 /// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     //Create prover
-    let mut prover = Prover::from_fpath(FS_PROVE_PARAMS, FS_PROVE_SEED);
+    let mut prover = Prover::from_dirs(FS_PROVE_PARAMS, FS_PROVE_SEED);
     loop {
         thread::sleep(Duration::from_millis(2000));
 
@@ -43,29 +42,31 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         {
             Some(traces) => traces,
             None => {
-                log::info!("No trace obtained for block: {:#?}", prove_request.block_num);
+                log::info!(
+                    "No trace obtained for block: {:#?}",
+                    prove_request.block_num
+                );
                 continue;
-            },
+            }
         };
 
-        // Step3. start prove
-        log::info!("start prove, block num is: {:#?}", prove_request.block_num);
-        let proof: zkevm::prover::AggCircuitProof =
-            match prover.create_agg_circuit_proof_batch(block_traces.as_slice()) {
+        //TODO chunk_size
+        for trace_trunk in block_traces.chunks(10) {
+            // Step3. start prove
+            log::info!("start prove, block num is: {:#?}", prove_request.block_num);
+            match prover.gen_chunk_proof(trace_trunk.to_vec(), None, None, Some(FS_PROOF)) {
                 Ok(proof) => {
-                    log::info!("the prove result is: {:#?}", proof);
-                    proof
+                    log::info!("chunk prove result is: {:#?}", proof);
                 }
                 Err(e) => {
-                    log::error!("prove err: {:#?}", e);
+                    log::error!("chunk prove err: {:#?}", e);
                     continue;
                 }
             };
-        log::info!("end prove, block num is: {:#?}", prove_request.block_num);
-
-        // Step4. save proof
-        let mut proof_save_path =
-            PathBuf::from(FS_PROOF).join(format!("agg-proof#block#{}", prove_request.block_num));
-        proof.write_to_dir(&mut proof_save_path);
+            log::info!(
+                "end chunk prove, block num is: {:#?}",
+                prove_request.block_num
+            );
+        }
     }
 }
