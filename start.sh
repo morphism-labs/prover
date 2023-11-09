@@ -1,0 +1,1 @@
+nohup ./target/release/prover_server >out.log 2>&1 &

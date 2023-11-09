@@ -28,7 +28,7 @@ pub struct BaseResult {
 #[tokio::main]
 async fn main() {
     // Step1. prepare environment
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     fs::create_dir_all(FS_PROOF).unwrap();
     let queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -84,7 +84,7 @@ async fn add_pending_req(
     }
 
     let proof = query_proof(prove_request.block_num_start.to_string()).await;
-    if proof.is_empty() {
+    if !proof.is_empty() {
         return String::from("there are already proven results");
     }
     // Add request to queue
