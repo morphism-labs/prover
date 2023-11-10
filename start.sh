@@ -1,1 +1,1 @@
-nohup ./target/release/prover_server >out.log 2>&1 &
+RUST_LOG=trace RUST_BACKTRACE=full nohup ./target/release/prover_server >out.log 2>&1 &
