@@ -34,9 +34,9 @@ fn main() {
     // Create super circut param
     load_or_create_params(params_path.as_str(), 20);
     // Create aggregator circut param
-    load_or_create_params(params_path.as_str(), 6);
-    // Create seed
-    // load_or_create_seed(seed_path.as_str()).expect("failed to load or create seed");
+    load_or_create_params(params_path.as_str(), 24);
+    load_or_create_params(params_path.as_str(), 26);
+
 }
 
 fn load_or_create_params(params_path: &str, degree: u32) {
