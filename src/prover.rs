@@ -72,7 +72,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         //TODO chunk_size
         let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
         log::info!("staring trunk prove");
-        for trace_trunk in block_traces.chunks(2) {
+        for trace_trunk in block_traces.chunks(1) {
             let witness_chunk = chunk_trace_to_witness_block(trace_trunk.to_vec()).unwrap();
             let chunk_info = ChunkHash::from_witness_block(&witness_chunk, false);
             // Step3. start prove
