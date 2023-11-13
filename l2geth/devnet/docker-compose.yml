@@ -1,12 +1,12 @@
 version: '3.4'
 
 volumes:
-  sequencer_geth_data_dev:
-  sequencer_node_data_dev:
+  sequencer_geth_data_prover:
+  sequencer_node_data_prover:
 
 services:
   sequencer_geth:
-    image: morphism-geth:latest
+    image: morphism-geth:prover0.0.1
     ports:
       - "6688:8545"
     healthcheck:
@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 3
     volumes:
-      - "sequencer_geth_data_dev:${GETH_DATA_DIR}"
+      - "sequencer_geth_data_prover:${GETH_DATA_DIR}"
       - "${PWD}/jwt-secret.txt:${JWT_SECRET_PATH}"
       - "${PWD}/genesis_geth.json:${GENESIS_FILE_PATH}"
     entrypoint: # pass the L2 specific flags by overriding the entry-point and adding extra arguments
@@ -39,7 +39,7 @@ services:
       - MORPH_NODE_SYNC_DEPOSIT_CONTRACT_ADDRESS=0x6900000000000000000000000000000000000001
       ## - MORPH_NODE_SYNC_START_HEIGHT=88854536
     volumes:
-      - "sequencer_node_data_dev:${NODE_DATA_DIR}"
+      - "sequencer_node_data_prover:${NODE_DATA_DIR}"
       - "${PWD}/jwt-secret.txt:${JWT_SECRET_PATH}"
     command: >
       morphnode
