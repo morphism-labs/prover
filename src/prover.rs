@@ -1,4 +1,5 @@
 use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
+use dotenv::dotenv;
 use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
 use prover::utils::chunk_trace_to_witness_block;
@@ -6,6 +7,7 @@ use prover::zkevm::Prover as ChunkProver;
 use prover::{ChunkHash, ChunkProof};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::env::var;
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
@@ -23,6 +25,12 @@ pub struct ProveRequest {
 /// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     //Create prover
+    dotenv().ok();
+    let chunk_size: usize = var("CHUNK_SIZE")
+        .expect("Cannot detect CHUNK_SIZE env var")
+        .parse()
+        .expect("Cannot parse CHUNK_SIZE env var");
+
     env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
     let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, "./configs");
@@ -65,16 +73,16 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 continue;
             }
         };
-        if block_traces.is_empty(){
+        if block_traces.is_empty() {
             continue;
         }
 
         //TODO chunk_size
         let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
         //TODO time
-        log::info!("staring trunk prove");
-        for trace_trunk in block_traces.chunks(2) {
-            let witness_chunk = chunk_trace_to_witness_block(trace_trunk.to_vec()).unwrap();
+        log::info!("starting chunk prove");
+        for trace_chunk in block_traces.chunks(chunk_size) {
+            let witness_chunk = chunk_trace_to_witness_block(trace_chunk.to_vec()).unwrap();
             let chunk_info = ChunkHash::from_witness_block(&witness_chunk, false);
             // Step3. start prove
             log::info!(
@@ -82,7 +90,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 prove_request.block_num_start
             );
             let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof(
-                trace_trunk.to_vec(),
+                trace_chunk.to_vec(),
                 None,
                 None,
                 Some(FS_PROOF),
@@ -113,7 +121,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         //     continue;
         // }
 
-        log::info!("staring batch prove");
+        log::info!("starting batch prove");
         let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, "./configs");
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(FS_PROOF));
         match batch_proof {
