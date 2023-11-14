@@ -6,7 +6,7 @@ volumes:
 
 services:
   sequencer_geth_prover:
-    image: morphism-geth:prover0.0.1
+    image: morphism-geth:prover0.0.2
     ports:
       - "6688:8545"
     healthcheck:
@@ -28,7 +28,7 @@ services:
         condition: service_started
     image: morphism-node:latest
     ports:
-      - "26666:26656"
+      - "21666:26656"
     environment:
       - EMPTY_BLOCK_DELAY=true
       - MORPH_NODE_L2_ETH_RPC=http://sequencer_geth_prover:8545
