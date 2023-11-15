@@ -109,6 +109,7 @@ async fn query_proof(batch_index: String) -> String {
         {
             let mut file = fs::File::open(path).unwrap();
             file.read_to_string(&mut data).unwrap();
+            break;
         }
     }
     return data;
@@ -116,10 +117,10 @@ async fn query_proof(batch_index: String) -> String {
 
 // Async function to check queue status.
 // Locks queue and returns length > 0 ? "not empty" : "empty"
-async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>) -> u8 {
+async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>) -> String {
     match queue.lock().await.len() {
-        0 => 0,
-        _ => 1,
+        0 => String::from("0"),
+        _ => String::from("1"),
     }
 }
 

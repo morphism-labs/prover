@@ -29,18 +29,15 @@ pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_rollup: Rollup<Provider<Http>> = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, Arc::new(l1_provider.clone()));
 
-    pre_process(l1_provider, l1_rollup).await;
+    handle_with_zk(l1_provider, l1_rollup).await;
 
     Ok(())
 }
 
-async fn post_process(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
-    loop {
-        std::thread::sleep(Duration::from_secs(60));
-    }
-}
+async fn handle_with_zk(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
+    let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
+    let prover_rpc = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
 
-async fn pre_process(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
     loop {
         std::thread::sleep(Duration::from_secs(60));
 
@@ -48,35 +45,39 @@ async fn pre_process(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Htt
         let latest = match l1_provider.get_block_number().await {
             Ok(bn) => bn,
             Err(e) => {
-                log::error!("l1_provider.get_block_number error: {:#?}", e);
+                log::error!("L1 provider.get_block_number error: {:#?}", e);
                 continue;
             }
         };
-        // Step2. fetch challenge msg.
-        let batch_index = match take_challenge_batch(latest, &l1_rollup, &l1_provider).await {
+        // Step2. detecte challenge event.
+        let batch_index = match detecte_challenge_event(latest, &l1_rollup, &l1_provider).await {
             Some(value) => value,
             None => continue,
         };
+        log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
 
         //Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
         let hash = match query_challenged_batch(latest, &l1_rollup, batch_index, &l1_provider).await {
             Some(value) => value,
             None => continue,
         };
-        let batch_info = batch_inspect(&l1_provider, hash).await;
-        if batch_info.is_none() {
+        let batch_info = match batch_inspect(&l1_provider, hash).await {
+            Some(batch) => batch,
+            None => continue,
+        };
+        if batch_info.is_empty() {
             continue;
         }
 
         // Make a call to the Prove server.
         let request = ProveRequest {
             batch_index: batch_index,
-            chunks: batch_info.unwrap(),
-            rpc: String::from("http://localhost:6688"),
+            chunks: batch_info.clone(),
+            rpc: l2_rpc.to_owned(),
         };
 
         let client = reqwest::blocking::Client::new();
-        let url = "http://localhost/prove_block";
+        let url = prover_rpc.to_owned() + "/prove_block";
         let response = client
             .post(url)
             .header(
@@ -88,6 +89,60 @@ async fn pre_process(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Htt
             .unwrap();
 
         println!("Response: {:?}", response.text().unwrap());
+        log::info!("Successfully submitted proof task, waiting for proof to be generated");
+
+        std::thread::sleep(Duration::from_secs((4200 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 10min，batch_prove_time = 24min；
+        prove_state(batch_index, prover_rpc.to_owned(), &l1_rollup).await;
+    }
+}
+
+async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Provider<Http>>) -> bool {
+    let url = prover_rpc + "/query_proof";
+    loop {
+        std::thread::sleep(Duration::from_secs(300));
+
+        // Make a call to the Prove server.
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .post(url.to_owned())
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .body(batch_index.to_string())
+            .send();
+        let rt = match response {
+            Ok(x) => x.bytes(),
+            Err(e) => {
+                log::error!("query proof of {:#?} error: {:#?}", batch_index, e);
+                continue;
+            }
+        };
+
+        let proof_bytes = match rt {
+            Ok(x) => x,
+            Err(e) => {
+                log::error!("query proof bytes of {:#?} error: {:#?}", batch_index, e);
+                continue;
+            }
+        };
+
+        if proof_bytes.is_empty() {
+            log::info!("query proof of {:#?} is empty", batch_index);
+            continue;
+        }
+
+        // println!("Response: {:?}", response.text().unwrap());
+        let aggr_proof = Bytes::decode(proof_bytes).unwrap();
+        let tx = l1_rollup.prove_state(batch_index, aggr_proof);
+        let rt = tx.send().await;
+        match rt {
+            Ok(info) => {
+                log::info!("tx of prove_state has been sent: {:#?}", info.tx_hash());
+                return true;
+            }
+            Err(e) => log::error!("send tx of prove_state error: {:#?}", e),
+        }
     }
 }
 
@@ -97,25 +152,22 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
     } else {
         U64::from(1)
     };
-    let filter = l1_rollup
-        .commit_batch_filter()
-        .filter
-        .from_block(start - 100)
-        .topic1(U256::from(batch_index));
+    let filter = l1_rollup.commit_batch_filter().filter.from_block(start).topic1(U256::from(batch_index));
     let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
-            log::error!("l1_provider.get_logs error: {:#?}", e);
+            log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
             return None;
         }
     };
     if logs.is_empty() {
-        log::warn!("rollup logs for the last 100 blocks of l1 is empty");
+        log::warn!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
         return None;
     }
     let target_log = match logs.iter().find(|log| log.topics[1].to_low_u64_be() == batch_index) {
         Some(log) => log,
         None => {
+            log::warn!("no commit_batch log of {:?}", batch_index);
             return None;
         }
     };
@@ -123,7 +175,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
     Some(hash)
 }
 
-async fn take_challenge_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>, l1_provider: &Provider<Http>) -> Option<u64> {
+async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(100) {
         latest - U64::from(100) //100
     } else {
@@ -133,22 +185,30 @@ async fn take_challenge_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>, l
     let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
-            log::error!("l1_provider.get_logs error: {:#?}", e);
+            log::error!("l1_rollup.challenge_state.get_logs error: {:#?}", e);
             return None;
         }
     };
-    log::debug!("l1_provider.submit_batches.get_logs.len ={:#?}", logs.len());
+    log::debug!("l1_rollup.challenge_state.get_logs.len = {:#?}", logs.len());
     let log = match logs.first() {
         Some(log) => log,
         None => {
-            log::info!("no submit batches logs, latest blocknum ={:#?}", latest);
+            log::info!("no challenge state logs, latest blocknum = {:#?}", latest);
             return None;
         }
     };
     let batch_index: u64 = log.topics[1].to_low_u64_be();
 
-    let batch_in_challenge: bool = l1_rollup.batch_in_challenge(U256::from(batch_index)).await.unwrap();
+    let batch_in_challenge: bool = match l1_rollup.batch_in_challenge(U256::from(batch_index)).await {
+        Ok(x) => x,
+        Err(e) => {
+            log::info!("query l1_rollup.batch_in_challenge error, batch index = {:#?}, {:#?}", batch_index, e);
+            return None;
+        }
+    };
+
     if batch_in_challenge == false {
+        log::info!("batch not in challenge, batch index = {:#?}", batch_index);
         return None;
     }
 
@@ -199,13 +259,16 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
         //&ethers::types::Bytes
         let mut chunk_bn: Vec<u64> = vec![];
         let bs: &[u8] = chunk;
+
+        // decode blocks from chunk
+        // |   1 byte   | 60 bytes | ... | 60 bytes |
+        // | num blocks |  block 1 | ... |  block n |
         let num_blocks = U256::from_big_endian(bs.get(..1).unwrap());
-        println!("num_blocks: {:?}", num_blocks);
         for i in 0..num_blocks.as_usize() {
             let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8)).unwrap());
             chunk_bn.push(block_num.as_u64());
         }
-        println!("chunk_bn: {:?}", chunk_bn);
+        log::info!("chunk_bn: {:#?}", chunk_bn);
 
         chunk_vec.push(chunk_bn);
     }
