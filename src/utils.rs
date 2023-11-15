@@ -8,18 +8,24 @@ pub const FS_PROOF: &'static str = "proof";
 // Fetches block traces by provider
 pub async fn get_block_traces_by_number(
     provider: &Provider<Http>,
-    block_start: u64,
-    block_end: u64,
+    block_nums: &Vec<u64>,
 ) -> Option<Vec<BlockTrace>> {
     let mut block_traces: Vec<BlockTrace> = Vec::new();
-    for i in block_start..block_end + 1 {
-        log::info!("zkevm-prover: requesting trace of block {i}");
+    for block_num in block_nums {
+        log::info!("zkevm-prover: requesting trace of block {block_num}");
         let result = provider
-            .request("scroll_getBlockTraceByNumberOrHash", [format!("{i:#x}")])
+            .request(
+                "scroll_getBlockTraceByNumberOrHash",
+                [format!("{block_num:#x}")],
+            )
             .await;
+
         match result {
             Ok(trace) => block_traces.push(trace),
-            Err(e) => log::error!("zkevm-prover: requesting trace error: {e}"),
+            Err(e) => {
+                log::error!("zkevm-prover: requesting trace error: {e}");
+                return None;
+            }
         }
     }
     Some(block_traces)

@@ -36,7 +36,7 @@ async fn main() {
     let task_queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::clone(&queue);
     tokio::spawn(async {
         let service = Router::new()
-            .route("/prove_block", post(add_pending_req))
+            .route("/prove_batch", post(add_pending_req))
             .route("/query_proof", post(query_proof))
             .route("/query_status", post(query_status))
             .layer(AddExtensionLayer::new(task_queue))
@@ -55,10 +55,7 @@ async fn main() {
 }
 
 // Add pending prove request to queue
-async fn add_pending_req(
-    Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>,
-    param: String,
-) -> String {
+async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>, param: String) -> String {
     // Verify parameter is not empty
     if param.is_empty() {
         return String::from("request is empty");
@@ -74,16 +71,20 @@ async fn add_pending_req(
     };
 
     // Verify block number is greater than 0
-    if prove_request.block_num_start == 0 || prove_request.block_num_end == 0 {
-        return String::from("block_num should be greater than 0");
+    if prove_request.chunks.len() == 0 {
+        return String::from("chunks is empty");
     }
 
     // Verify RPC URL format
-    if !prove_request.rpc.starts_with("http://") {
+    if !prove_request.rpc.starts_with("http://") || !prove_request.rpc.starts_with("https://") {
         return String::from("invalid rpc url");
     }
 
-    let proof = query_proof(prove_request.block_num_start.to_string()).await;
+    if queue.lock().await.len() > 0 {
+        return String::from("add prove batch fail, please waiting for the pending task to complete");
+    }
+
+    let proof = query_proof(prove_request.batch_index.to_string()).await;
     if !proof.is_empty() {
         return String::from("there are already proven results");
     }
@@ -96,7 +97,7 @@ async fn add_pending_req(
 // Async function to query proof data for a given block number.
 // It reads the proof directory and finds the file matching the block number.
 // The file contents are read into a String which is returned.
-async fn query_proof(block_num: String) -> String {
+async fn query_proof(batch_index: String) -> String {
     let fs: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
     let mut data = String::new();
     for entry in fs.unwrap() {
@@ -104,7 +105,7 @@ async fn query_proof(block_num: String) -> String {
         if path
             .to_str()
             .unwrap()
-            .contains(format!("block#{}", block_num).as_str())
+            .contains(format!("/batch_{}", batch_index).as_str())
         {
             let mut file = fs::File::open(path).unwrap();
             file.read_to_string(&mut data).unwrap();
@@ -115,18 +116,18 @@ async fn query_proof(block_num: String) -> String {
 
 // Async function to check queue status.
 // Locks queue and returns length > 0 ? "not empty" : "empty"
-async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>) -> String {
+async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>) -> u8 {
     match queue.lock().await.len() {
-        0 => String::from("queue empty"),
-        _ => String::from("queue not empty"),
+        0 => 0,
+        _ => 1,
     }
 }
 
 #[tokio::test]
 async fn test() {
     let request = ProveRequest {
-        block_num_start: 4,
-        block_num_end: 4,
+        batch_index: 4,
+        chunks: vec![vec![1], vec![2, 3]],
         rpc: String::from("127.0.0.1:8569"),
     };
     let info = serde_json::to_string(&request);

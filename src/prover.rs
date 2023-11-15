@@ -4,37 +4,31 @@ use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
 use prover::utils::chunk_trace_to_witness_block;
 use prover::zkevm::Prover as ChunkProver;
-use prover::{ChunkHash, ChunkProof};
+use prover::{BlockTrace, ChunkHash, ChunkProof};
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::env::var;
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
+use std::{env, fs};
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
 
 // proveRequest
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProveRequest {
-    pub block_num_start: u64,
-    pub block_num_end: u64,
+    pub batch_index: u64,
+    pub chunks: Vec<Vec<u64>>,
     pub rpc: String,
 }
 
 /// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
-    //Create prover
     dotenv().ok();
-    let chunk_size: usize = var("CHUNK_SIZE")
-        .expect("Cannot detect CHUNK_SIZE env var")
-        .parse()
-        .expect("Cannot parse CHUNK_SIZE env var");
-
     env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
     let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, "./configs");
-    loop {
+    'task: loop {
         thread::sleep(Duration::from_millis(2000));
         log::info!("starting take request");
 
@@ -50,78 +44,59 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             }
         };
         // Step2. fetch trace
-        let provider = match Provider::try_from(prove_request.rpc) {
+        let provider = match Provider::try_from(&prove_request.rpc) {
             Ok(provider) => provider,
             Err(e) => {
                 log::error!("Failed to init provider: {:#?}", e);
                 continue;
             }
         };
-        let block_traces = match get_block_traces_by_number(
-            &provider,
-            prove_request.block_num_start,
-            prove_request.block_num_end,
-        )
-        .await
-        {
-            Some(traces) => traces,
-            None => {
-                log::info!(
-                    "No trace obtained for block: {:#?}",
-                    prove_request.block_num_start
-                );
-                continue;
-            }
+        let chunk_traces = match get_chunk_traces(&prove_request, provider).await {
+            Some(chunk_traces) => chunk_traces,
+            None => continue,
         };
-        if block_traces.is_empty() {
+        if chunk_traces.is_empty() {
             continue;
         }
 
-        //TODO chunk_size
+        fs::create_dir_all(FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str()).unwrap();
+
+        // Step3. start chunk prove
         let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
-        //TODO time
-        log::info!("starting chunk prove");
-        for trace_chunk in block_traces.chunks(chunk_size) {
-            let witness_chunk = chunk_trace_to_witness_block(trace_chunk.to_vec()).unwrap();
+        for (index, chunk_trace) in chunk_traces.iter().enumerate() {
+            let witness_chunk = chunk_trace_to_witness_block(chunk_trace.to_vec()).unwrap();
             let chunk_info = ChunkHash::from_witness_block(&witness_chunk, false);
-            // Step3. start prove
             log::info!(
-                "start prove, block num is: {:#?}",
-                prove_request.block_num_start
+                "starting chunk prove, batch index = {:#?},chunk index = {:#?}",
+                &prove_request.batch_index,
+                index
             );
-            let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof(
-                trace_chunk.to_vec(),
-                None,
-                None,
-                Some(FS_PROOF),
-            ) {
-                Ok(proof) => {
-                    log::info!("chunk prove result is: {:#?}", proof);
-                    proof
-                }
-                Err(e) => {
-                    log::error!("chunk prove err: {:#?}", e);
-                    continue;
-                }
-            };
+            let chunk_proof: ChunkProof =
+                match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(FS_PROOF)) {
+                    Ok(proof) => {
+                        log::info!("chunk prove result is: {:#?}", proof);
+                        proof
+                    }
+                    Err(e) => {
+                        log::error!("chunk prove err: {:#?}", e);
+                        continue 'task;
+                    }
+                };
             //save chunk.protocol
             let protocol = &chunk_proof.protocol;
             let mut params_file = File::create("configs/chunk.protocol").unwrap();
             params_file.write_all(&protocol[..]).unwrap();
 
             chunk_hashes_proofs.push((chunk_info, chunk_proof));
-            log::info!(
-                "end chunk prove, block num is: {:#?}",
-                prove_request.block_num_start
-            );
         }
 
-        // if chunk_hashes_proofs.len() != 2 {
-        //     log::error!("chunk proof len err");
-        //     continue;
-        // }
+        if chunk_hashes_proofs.len() != chunk_traces.len() {
+            log::error!("chunk proofs len err");
+            continue;
+        }
 
-        log::info!("starting batch prove");
+        // Step4. start batch prove
+        log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
         let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, "./configs");
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(FS_PROOF));
         match batch_proof {
@@ -131,6 +106,31 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }
     }
+}
+
+async fn get_chunk_traces(
+    prove_request: &ProveRequest,
+    provider: Provider<ethers::providers::Http>,
+) -> Option<Vec<Vec<BlockTrace>>> {
+    let mut chunk_traces: Vec<Vec<BlockTrace>> = vec![];
+    for chunk in &prove_request.chunks {
+        let chunk_trace = match get_block_traces_by_number(&provider, &chunk).await {
+            Some(traces) => traces,
+            None => {
+                log::error!("No trace obtained for batch: {:#?}", prove_request.batch_index);
+                return None;
+            }
+        };
+        if chunk.len() != chunk_trace.len() {
+            log::error!(
+                "chunk_trace.len not expect, batch index = {:#?}",
+                prove_request.batch_index
+            );
+            return None;
+        }
+        chunk_traces.push(chunk_trace)
+    }
+    Some(chunk_traces)
 }
 
 #[tokio::test]
