@@ -5,7 +5,7 @@ use ethers::signers::Wallet;
 use ethers::types::Address;
 use ethers::types::Bytes;
 use ethers::{abi::AbiDecode, prelude::*};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env::var;
 use std::error::Error;
 use std::ops::Mul;
@@ -18,6 +18,14 @@ pub struct ProveRequest {
     pub batch_index: u64,
     pub chunks: Vec<Vec<u64>>,
     pub rpc: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProveResult {
+    pub error_msg: String,
+    pub error_code: String,
+    pub proof_data: String,
+    pub pi_data: String,
 }
 
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
@@ -112,14 +120,14 @@ async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Pr
             .body(batch_index.to_string())
             .send();
         let rt = match response {
-            Ok(x) => x.bytes(),
+            Ok(x) => x.text(),
             Err(e) => {
                 log::error!("query proof of {:#?} error: {:#?}", batch_index, e);
                 continue;
             }
         };
 
-        let proof_bytes = match rt {
+        let rt_text = match rt {
             Ok(x) => x,
             Err(e) => {
                 log::error!("query proof bytes of {:#?} error: {:#?}", batch_index, e);
@@ -127,13 +135,21 @@ async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Pr
             }
         };
 
-        if proof_bytes.is_empty() {
-            log::info!("query proof of {:#?} is empty", batch_index);
+        let prove_result: ProveResult = match serde_json::from_str(rt_text.as_str()) {
+            Ok(pr) => pr,
+            Err(_) => {
+                log::error!("deserialize prove_result failed, batch index = {:#?}", batch_index);
+                return false;
+            }
+        };
+
+        if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
+            log::info!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
             continue;
         }
 
         // println!("Response: {:?}", response.text().unwrap());
-        let aggr_proof = Bytes::decode(proof_bytes).unwrap();
+        let aggr_proof = Bytes::decode(prove_result.proof_data).unwrap();
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
         match rt {

@@ -1,7 +1,10 @@
 use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
 use dotenv::dotenv;
 use ethers::providers::Provider;
+use halo2_proofs::halo2curves::bn256::Bn256;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use prover::aggregator::Prover as BatchProver;
+use prover::config::{LayerId, LAYER4_DEGREE};
 use prover::utils::chunk_trace_to_witness_block;
 use prover::zkevm::Prover as ChunkProver;
 use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
@@ -105,15 +108,32 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(FS_PROOF));
         match batch_proof {
             Ok(proof) => {
-                log::info!("batch prove result is: {:#?}", proof);
+                // log::info!("batch prove result is: {:#?}", proof);
+                log::info!("batch prove complate");
 
                 // batch_prover.inner.params(26);
-                // let params:ParamsKZG<Bn256> = prover::utils::load_params(params_dir, degree, serde_fmt)
+                // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
 
+                // params
+                // batch_prover
+                log::info!("starting generate evm verifier");
                 let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
-                    batch_prover.inner.params(26).clone(),
-                    &batch_prover.inner.raw_vk().unwrap(),
+                    batch_prover.inner.params(*LAYER4_DEGREE).clone(),
+                    &batch_prover.get_vk().unwrap(),
                 );
+
+                let instances = proof.clone().proof_to_verify().instances();
+                let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
+
+                let evm_proof = prover::EvmProof::new(
+                    proof.clone().proof_to_verify().proof().to_vec(),
+                    &proof.proof_to_verify().instances(),
+                    num_instances,
+                    batch_prover.inner.pk(LayerId::Layer4.id()),
+                );
+                fs::create_dir_all("evm_verifier").unwrap();
+                verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
+                log::info!("generate evm verifier complate");
             }
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }
