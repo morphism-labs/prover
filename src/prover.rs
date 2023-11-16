@@ -4,7 +4,7 @@ use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
 use prover::utils::chunk_trace_to_witness_block;
 use prover::zkevm::Prover as ChunkProver;
-use prover::{BlockTrace, ChunkHash, ChunkProof};
+use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
 use serde::{Deserialize, Serialize};
 use std::env::var;
 use std::fs::File;
@@ -35,7 +35,11 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         // Step1. pop request from queue
         let prove_request: ProveRequest = match prove_queue.lock().await.pop() {
             Some(req) => {
-                log::info!("received prove request");
+                log::info!(
+                    "received prove request,batch index = {:#?}, chunks len = {:#?}",
+                    req.batch_index,
+                    req.chunks.len()
+                );
                 req
             }
             None => {
@@ -102,6 +106,14 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         match batch_proof {
             Ok(proof) => {
                 log::info!("batch prove result is: {:#?}", proof);
+
+                // batch_prover.inner.params(26);
+                // let params:ParamsKZG<Bn256> = prover::utils::load_params(params_dir, degree, serde_fmt)
+
+                let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
+                    batch_prover.inner.params(26).clone(),
+                    &batch_prover.inner.raw_vk().unwrap(),
+                );
             }
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }

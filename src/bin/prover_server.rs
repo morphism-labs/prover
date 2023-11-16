@@ -1,4 +1,5 @@
 use env_logger::Env;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::sync::Arc;
@@ -13,10 +14,12 @@ use tower_http::trace::TraceLayer;
 use zkevm_prover::prover::{prove_for_queue, ProveRequest};
 use zkevm_prover::utils::FS_PROOF;
 
-pub struct BaseResult {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProveResult {
     pub error_msg: String,
     pub error_code: String,
-    pub result_value: String,
+    pub proof_data: String,
+    pub pi_data: String,
 }
 
 // Main async function to start prover service.
@@ -37,7 +40,7 @@ async fn main() {
     tokio::spawn(async {
         let service = Router::new()
             .route("/prove_batch", post(add_pending_req))
-            .route("/query_proof", post(query_proof))
+            .route("/query_proof", post(query_prove_result))
             .route("/query_status", post(query_status))
             .layer(AddExtensionLayer::new(task_queue))
             .layer(CorsLayer::permissive())
@@ -76,7 +79,7 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     }
 
     // Verify RPC URL format
-    if !prove_request.rpc.starts_with("http://") || !prove_request.rpc.starts_with("https://") {
+    if !prove_request.rpc.starts_with("http://") && !prove_request.rpc.starts_with("https://") {
         return String::from("invalid rpc url");
     }
 
@@ -85,7 +88,7 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     }
 
     let proof = query_proof(prove_request.batch_index.to_string()).await;
-    if !proof.is_empty() {
+    if !proof.proof_data.is_empty() || !proof.pi_data.is_empty() {
         return String::from("there are already proven results");
     }
     // Add request to queue
@@ -97,9 +100,19 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
 // Async function to query proof data for a given block number.
 // It reads the proof directory and finds the file matching the block number.
 // The file contents are read into a String which is returned.
-async fn query_proof(batch_index: String) -> String {
+async fn query_prove_result(batch_index: String) -> String {
+    let result = query_proof(batch_index).await;
+    return serde_json::to_string(&result).unwrap();
+}
+
+async fn query_proof(batch_index: String) -> ProveResult {
     let fs: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
-    let mut data = String::new();
+    let mut result = ProveResult {
+        error_msg: String::from(""),
+        error_code: String::from(""),
+        proof_data: String::from(""),
+        pi_data: String::from(""),
+    };
     for entry in fs.unwrap() {
         let path = entry.unwrap().path();
         if path
@@ -107,12 +120,34 @@ async fn query_proof(batch_index: String) -> String {
             .unwrap()
             .contains(format!("/batch_{}", batch_index).as_str())
         {
-            let mut file = fs::File::open(path).unwrap();
-            file.read_to_string(&mut data).unwrap();
+            //pi_batch_agg.data
+            let proof_path = path.join("proof_batch_agg.data");
+            let mut proof_data = String::new();
+            match fs::File::open(proof_path) {
+                Ok(mut file) => {
+                    file.read_to_string(&mut proof_data).unwrap();
+                }
+                Err(e) => {
+                    log::error!("Failed to load proof_data: {:#?}", e);
+                }
+            }
+            result.proof_data = proof_data;
+
+            let pi_path = path.join("pi_batch_agg.data");
+            let mut pi_data = String::new();
+            match fs::File::open(pi_path) {
+                Ok(mut file) => {
+                    file.read_to_string(&mut pi_data).unwrap();
+                }
+                Err(e) => {
+                    log::error!("Failed to load pi_data: {:#?}", e);
+                }
+            }
+            result.pi_data = pi_data;
             break;
         }
     }
-    return data;
+    return result;
 }
 
 // Async function to check queue status.
@@ -122,6 +157,12 @@ async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>
         0 => String::from("0"),
         _ => String::from("1"),
     }
+}
+
+#[tokio::test]
+async fn test_query_proof() {
+    let proof = query_proof("4".to_string()).await;
+    println!("{:?}", proof);
 }
 
 #[tokio::test]
