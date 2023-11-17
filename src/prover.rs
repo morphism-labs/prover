@@ -66,7 +66,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             continue;
         }
 
-        fs::create_dir_all(FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str()).unwrap();
+        let proof_path = FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
+        fs::create_dir_all(proof_path.clone()).unwrap();
 
         // Step3. start chunk prove
         let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
@@ -79,7 +80,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 index
             );
             let chunk_proof: ChunkProof =
-                match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(FS_PROOF)) {
+                match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(proof_path.as_str())) {
                     Ok(proof) => {
                         log::info!("chunk prove result is: {:#?}", proof);
                         proof
@@ -105,7 +106,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         // Step4. start batch prove
         log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
         let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, "./configs");
-        let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(FS_PROOF));
+        let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
                 // log::info!("batch prove result is: {:#?}", proof);
@@ -116,24 +117,24 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
                 // params
                 // batch_prover
-                log::info!("starting generate evm verifier");
-                let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
-                    batch_prover.inner.params(*LAYER4_DEGREE).clone(),
-                    &batch_prover.get_vk().unwrap(),
-                );
+                // log::info!("starting generate evm verifier");
+                // let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
+                //     batch_prover.inner.params(*LAYER4_DEGREE).clone(),
+                //     &batch_prover.get_vk().unwrap(),
+                // );
 
-                let instances = proof.clone().proof_to_verify().instances();
-                let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
+                // let instances = proof.clone().proof_to_verify().instances();
+                // let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
 
-                let evm_proof = prover::EvmProof::new(
-                    proof.clone().proof_to_verify().proof().to_vec(),
-                    &proof.proof_to_verify().instances(),
-                    num_instances,
-                    batch_prover.inner.pk(LayerId::Layer4.id()),
-                );
-                fs::create_dir_all("evm_verifier").unwrap();
-                verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
-                log::info!("generate evm verifier complate");
+                // let evm_proof = prover::EvmProof::new(
+                //     proof.clone().proof_to_verify().proof().to_vec(),
+                //     &proof.proof_to_verify().instances(),
+                //     num_instances,
+                //     batch_prover.inner.pk(LayerId::Layer4.id()),
+                // );
+                // fs::create_dir_all("evm_verifier").unwrap();
+                // verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
+                // log::info!("generate evm verifier complate");
             }
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }
