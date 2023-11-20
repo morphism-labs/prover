@@ -168,7 +168,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
     } else {
         U64::from(1)
     };
-    let filter = l1_rollup.commit_batch_filter().filter.from_block(start).topic1(U256::from(batch_index));
+    let filter = l1_rollup.commit_batch_filter().filter.from_block(start).topic1(U256::from(batch_index)).address(l1_rollup.address());
     let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
