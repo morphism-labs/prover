@@ -28,7 +28,7 @@ fn main() {
     let args = Args::parse();
     let params_path = match args.params_path {
         Some(path) => path,
-        None => String::from(FS_PROVE_PARAMS),
+        None => String::from("/test_prove_params"),
     };
 
     // Create super circut param
