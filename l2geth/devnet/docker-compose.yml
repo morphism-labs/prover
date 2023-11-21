@@ -6,7 +6,7 @@ volumes:
 
 services:
   sequencer_geth_prover:
-    image: morphism-geth:prover0.0.3
+    image: morphism-geth:prover0.0.4
     ports:
       - "6688:8545"
     healthcheck:
