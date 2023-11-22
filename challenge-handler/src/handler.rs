@@ -1,4 +1,5 @@
 use crate::abi::rollup_abi::{CommitBatchCall, Rollup};
+use crate::util;
 use dotenv::dotenv;
 use ethers::providers::{Http, Provider};
 use ethers::signers::Wallet;
@@ -33,18 +34,18 @@ pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
+    let _ = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_rollup: Rollup<Provider<Http>> = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, Arc::new(l1_provider.clone()));
 
-    handle_with_zk(l1_provider, l1_rollup).await;
+    handle_with_prover(l1_provider, l1_rollup).await;
 
     Ok(())
 }
 
-async fn handle_with_zk(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
+async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
     let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
-    let prover_rpc = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
 
     loop {
         std::thread::sleep(Duration::from_secs(60));
@@ -73,64 +74,45 @@ async fn handle_with_zk(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<
             Some(batch) => batch,
             None => continue,
         };
-        if batch_info.is_empty() {
-            continue;
-        }
 
-        // Make a call to the Prove server.
+        // Step4. Make a call to the Prove server.
         let request = ProveRequest {
             batch_index: batch_index,
             chunks: batch_info.clone(),
             rpc: l2_rpc.to_owned(),
         };
+        let rt = util::call_prover(serde_json::to_string(&request).unwrap(), "prove_block");
+        match rt {
+            Some(info) => {
+                if info.eq("success") {
+                    log::info!("successfully submitted prove task, waiting for proof to be generated");
+                } else {
+                    log::error!("submitt prove task failed: {:#?}", info);
+                    continue;
+                }
+            }
+            None => {
+                log::error!("submitt prove task failed");
+                continue;
+            }
+        }
 
-        let client = reqwest::blocking::Client::new();
-        let url = prover_rpc.to_owned() + "/prove_block";
-        let response = client
-            .post(url)
-            .header(
-                reqwest::header::CONTENT_TYPE,
-                reqwest::header::HeaderValue::from_static("application/json"),
-            )
-            .body(serde_json::to_string(&request).unwrap())
-            .send()
-            .unwrap();
-
-        println!("Response: {:?}", response.text().unwrap());
-        log::info!("Successfully submitted proof task, waiting for proof to be generated");
-
-        std::thread::sleep(Duration::from_secs((4200 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 10min，batch_prove_time = 24min；
-        prove_state(batch_index, prover_rpc.to_owned(), &l1_rollup).await;
+        // Step5. query proof and prove onchain state.
+        std::thread::sleep(Duration::from_secs((4800 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 20min，batch_prove_time = 24min；
+        prove_state(batch_index, &l1_rollup).await;
     }
 }
 
-async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Provider<Http>>) -> bool {
-    let url = prover_rpc + "/query_proof";
+async fn prove_state(batch_index: u64, l1_rollup: &Rollup<Provider<Http>>) -> bool {
     loop {
         std::thread::sleep(Duration::from_secs(300));
 
         // Make a call to the Prove server.
-        let client = reqwest::blocking::Client::new();
-        let response = client
-            .post(url.to_owned())
-            .header(
-                reqwest::header::CONTENT_TYPE,
-                reqwest::header::HeaderValue::from_static("application/json"),
-            )
-            .body(batch_index.to_string())
-            .send();
-        let rt = match response {
-            Ok(x) => x.text(),
-            Err(e) => {
-                log::error!("query proof of {:#?} error: {:#?}", batch_index, e);
-                continue;
-            }
-        };
-
+        let rt = util::call_prover(batch_index.to_string(), "query_proof");
         let rt_text = match rt {
-            Ok(x) => x,
-            Err(e) => {
-                log::error!("query proof bytes of {:#?} error: {:#?}", batch_index, e);
+            Some(info) => info,
+            None => {
+                log::error!("query proof failed");
                 continue;
             }
         };
@@ -148,8 +130,13 @@ async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Pr
             continue;
         }
 
-        // println!("Response: {:?}", response.text().unwrap());
-        let aggr_proof = Bytes::decode(prove_result.proof_data).unwrap();
+        let aggr_proof = match Bytes::decode(prove_result.proof_data) {
+            Ok(ap) => ap,
+            Err(_) => {
+                log::error!("decode proof_data failed, batch index = {:#?}", batch_index);
+                return false;
+            }
+        };
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
         match rt {
@@ -164,11 +151,17 @@ async fn prove_state(batch_index: u64, prover_rpc: String, l1_rollup: &Rollup<Pr
 
 async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
     let start = if latest > U64::from(7200 * 3) {
+        // Depends on challenge period
         latest - U64::from(7200 * 3)
     } else {
         U64::from(1)
     };
-    let filter = l1_rollup.commit_batch_filter().filter.from_block(start).topic1(U256::from(batch_index)).address(l1_rollup.address());
+    let filter = l1_rollup
+        .commit_batch_filter()
+        .filter
+        .from_block(start)
+        .topic1(U256::from(batch_index))
+        .address(l1_rollup.address());
     let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
@@ -183,7 +176,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
     let target_log = match logs.iter().find(|log| log.topics[1].to_low_u64_be() == batch_index) {
         Some(log) => log,
         None => {
-            log::warn!("no commit_batch log of {:?}", batch_index);
+            log::error!("find commit_batch log error, batch index = {:?}", batch_index);
             return None;
         }
     };
@@ -192,12 +185,13 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
 }
 
 async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>, l1_provider: &Provider<Http>) -> Option<u64> {
-    let start = if latest > U64::from(100) {
-        latest - U64::from(100) //100
+    let start = if latest > U64::from(7200 * 3) {
+        // Depends on challenge period
+        latest - U64::from(7200 * 3)
     } else {
         U64::from(1)
     };
-    let filter = l1_rollup.challenge_state_filter().filter.from_block(start);
+    let filter = l1_rollup.challenge_state_filter().filter.from_block(start).address(l1_rollup.address());
     let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
@@ -209,7 +203,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>
     let log = match logs.first() {
         Some(log) => log,
         None => {
-            log::info!("no challenge state logs, latest blocknum = {:#?}", latest);
+            log::debug!("no challenge state logs, latest blocknum = {:#?}", latest);
             return None;
         }
     };
@@ -224,7 +218,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>
     };
 
     if batch_in_challenge == false {
-        log::info!("batch not in challenge, batch index = {:#?}", batch_index);
+        log::info!("batch status not in challenge, batch index = {:#?}", batch_index);
         return None;
     }
 
@@ -262,7 +256,7 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
     if let Some(value) = decode_chunks(chunks) {
         return Some(value);
     }
-    Some(vec![])
+    None
 }
 
 fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
@@ -270,7 +264,7 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
         return None;
     }
 
-    let mut chunk_vec: Vec<Vec<u64>> = vec![];
+    let mut chunk_with_blocks: Vec<Vec<u64>> = vec![];
     for chunk in chunks.iter() {
         //&ethers::types::Bytes
         let mut chunk_bn: Vec<u64> = vec![];
@@ -284,12 +278,12 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
             let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8)).unwrap());
             chunk_bn.push(block_num.as_u64());
         }
-        log::info!("chunk_bn: {:#?}", chunk_bn);
+        log::info!("decode_chunks_blocknum: {:#?}", chunk_bn);
 
-        chunk_vec.push(chunk_bn);
+        chunk_with_blocks.push(chunk_bn);
     }
 
-    return Some(chunk_vec);
+    return Some(chunk_with_blocks);
 }
 
 #[tokio::test]
@@ -309,7 +303,7 @@ async fn test_decode_chunks() {
 }
 
 #[tokio::test]
-async fn test_commit_filter() {
+async fn test_commit_batch_filter() {
     let l1_provider: Provider<Http> = Provider::<Http>::try_from("https://eth-mainnet.g.alchemy.com/v2/oGHoxvEj_29sdJlOjKMPMHvmqS8gYmLX").unwrap();
     let l1_rollup: Rollup<Provider<Http>> = Rollup::new(
         Address::from_str("0xa13BAF47339d63B743e7Da8741db5456DAc1E556").unwrap(),

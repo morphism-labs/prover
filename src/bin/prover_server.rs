@@ -59,6 +59,7 @@ async fn main() {
 
 // Add pending prove request to queue
 async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>, param: String) -> String {
+    
     // Verify parameter is not empty
     if param.is_empty() {
         return String::from("request is empty");
@@ -94,7 +95,7 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     // Add request to queue
     queue.lock().await.push(prove_request);
 
-    String::from("add task success")
+    String::from("success")
 }
 
 // Async function to query proof data for a given block number.
@@ -129,6 +130,7 @@ async fn query_proof(batch_index: String) -> ProveResult {
                 }
                 Err(e) => {
                     log::error!("Failed to load proof_data: {:#?}", e);
+                    result.error_msg = String::from("Failed to load proof_data");
                 }
             }
             result.proof_data = proof_data;
@@ -141,6 +143,7 @@ async fn query_proof(batch_index: String) -> ProveResult {
                 }
                 Err(e) => {
                     log::error!("Failed to load pi_data: {:#?}", e);
+                    result.error_msg = String::from("Failed to load pi_data");
                 }
             }
             result.pi_data = pi_data;
