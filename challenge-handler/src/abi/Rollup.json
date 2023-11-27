@@ -363,9 +363,9 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
+        "internalType": "uint64",
         "name": "batchIndex",
-        "type": "uint256"
+        "type": "uint64"
       }
     ],
     "name": "batchInChallenge",

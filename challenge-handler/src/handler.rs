@@ -29,26 +29,38 @@ pub struct ProveResult {
     pub pi_data: String,
 }
 
+type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
+
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
     dotenv().ok();
+    std::thread::sleep(Duration::from_secs(2));
+
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
+
     let _ = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
+    let private_key = var("L1_ROLLUP_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
-    let l1_rollup: Rollup<Provider<Http>> = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, Arc::new(l1_provider.clone()));
+    let l1_signer = Arc::new(SignerMiddleware::new(
+        l1_provider.clone(),
+        Wallet::from_str(private_key.as_str())
+            .unwrap()
+            .with_chain_id(l1_provider.get_chainid().await.unwrap().as_u64()),
+    ));
+    let l1_rollup: RollupType = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, l1_signer);
 
     handle_with_prover(l1_provider, l1_rollup).await;
 
     Ok(())
 }
 
-async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: Rollup<Provider<Http>>) {
+async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) {
     let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
 
     loop {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(Duration::from_secs(4));
 
         // Step1. fetch latest blocknum.
         let latest = match l1_provider.get_block_number().await {
@@ -81,7 +93,10 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: Rollup<Provi
             chunks: batch_info.clone(),
             rpc: l2_rpc.to_owned(),
         };
-        let rt = util::call_prover(serde_json::to_string(&request).unwrap(), "prove_block");
+        let rt = tokio::task::spawn_blocking(move || util::call_prover(serde_json::to_string(&request).unwrap(), "prove_block"))
+            .await
+            .unwrap();
+
         match rt {
             Some(info) => {
                 if info.eq("success") {
@@ -103,12 +118,14 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: Rollup<Provi
     }
 }
 
-async fn prove_state(batch_index: u64, l1_rollup: &Rollup<Provider<Http>>) -> bool {
+async fn prove_state(batch_index: u64, l1_rollup: &RollupType) -> bool {
     loop {
         std::thread::sleep(Duration::from_secs(300));
 
         // Make a call to the Prove server.
-        let rt = util::call_prover(batch_index.to_string(), "query_proof");
+        let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "query_proof"))
+            .await
+            .unwrap();
         let rt_text = match rt {
             Some(info) => info,
             None => {
@@ -149,7 +166,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &Rollup<Provider<Http>>) -> bo
     }
 }
 
-async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
+async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
         latest - U64::from(7200 * 3)
@@ -184,7 +201,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &Rollup<Provider<Http>>,
     Some(hash)
 }
 
-async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>, l1_provider: &Provider<Http>) -> Option<u64> {
+async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
         latest - U64::from(7200 * 3)
@@ -209,7 +226,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &Rollup<Provider<Http>>
     };
     let batch_index: u64 = log.topics[1].to_low_u64_be();
 
-    let batch_in_challenge: bool = match l1_rollup.batch_in_challenge(U256::from(batch_index)).await {
+    let batch_in_challenge: bool = match l1_rollup.batch_in_challenge(batch_index).await {
         Ok(x) => x,
         Err(e) => {
             log::info!("query l1_rollup.batch_in_challenge error, batch index = {:#?}, {:#?}", batch_index, e);
@@ -278,7 +295,7 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
             let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8)).unwrap());
             chunk_bn.push(block_num.as_u64());
         }
-        log::info!("decode_chunks_blocknum: {:#?}", chunk_bn);
+        log::debug!("decode_chunks_blocknum: {:#?}", chunk_bn);
 
         chunk_with_blocks.push(chunk_bn);
     }
