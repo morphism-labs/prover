@@ -33,7 +33,17 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .with_chain_id(l1_provider.get_chainid().await.unwrap().as_u64()),
     ));
+    let challenger_address = l1_signer.address();
     let l1_rollup = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, l1_signer);
+
+    let is_challenger: bool = match l1_rollup.is_challenger(challenger_address).await {
+        Ok(x) => x,
+        Err(e) => {
+            log::info!("query l1_rollup.is_challenger error: {:#?}", e);
+            return Ok(());
+        }
+    };
+    log::info!("address({:#?})  is_challenger: {:#?}", challenger_address, is_challenger);
 
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
