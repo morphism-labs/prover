@@ -60,7 +60,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
     let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
 
     loop {
-        std::thread::sleep(Duration::from_secs(4));
+        std::thread::sleep(Duration::from_secs(12));
 
         // Step1. fetch latest blocknum.
         let latest = match l1_provider.get_block_number().await {
@@ -93,7 +93,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             chunks: batch_info.clone(),
             rpc: l2_rpc.to_owned(),
         };
-        let rt = tokio::task::spawn_blocking(move || util::call_prover(serde_json::to_string(&request).unwrap(), "prove_block"))
+        let rt = tokio::task::spawn_blocking(move || util::call_prover(serde_json::to_string(&request).unwrap(), "/prove_batch"))
             .await
             .unwrap();
 
@@ -114,16 +114,16 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 
         // Step5. query proof and prove onchain state.
         std::thread::sleep(Duration::from_secs((4800 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 20min，batch_prove_time = 24min；
-        prove_state(batch_index, &l1_rollup).await;
+        prove_state(batch_index, &l1_rollup, &l1_provider).await;
     }
 }
 
-async fn prove_state(batch_index: u64, l1_rollup: &RollupType) -> bool {
+async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
-        std::thread::sleep(Duration::from_secs(300));
+        std::thread::sleep(Duration::from_secs(12));
 
         // Make a call to the Prove server.
-        let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "query_proof"))
+        let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "/query_proof"))
             .await
             .unwrap();
         let rt_text = match rt {
@@ -143,7 +143,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType) -> bool {
         };
 
         if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
-            log::info!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
+            log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
             continue;
         }
 
@@ -154,14 +154,40 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType) -> bool {
                 return false;
             }
         };
+        log::info!("starting prove state onchain, batch index = {:#?}", batch_index);
+
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
-        match rt {
-            Ok(info) => {
-                log::info!("tx of prove_state has been sent: {:#?}", info.tx_hash());
-                return true;
+        let pending_tx = match rt {
+            Ok(pending_tx) => {
+                log::info!("tx of prove_state has been sent: {:#?}", pending_tx.tx_hash());
+                pending_tx
             }
-            Err(e) => log::error!("send tx of prove_state error: {:#?}", e),
+            Err(e) => {
+                log::error!("send tx of prove_state error: {:#?}", e);
+                continue;
+            }
+        };
+
+        std::thread::sleep(Duration::from_secs(16));
+        let receipt = l1_provider.get_transaction_receipt(pending_tx.tx_hash()).await.unwrap();
+
+        match receipt {
+            Some(tr) => {
+                match tr.status.unwrap().as_u64() {
+                    1 => {
+                        log::info!("prove_state receipt success: {:#?}", tr);
+                        return true;
+                    }
+                    _ => {
+                        log::error!("prove_state receipt fail: {:#?}", tr);
+                    }
+                };
+            }
+            // Maybe still pending
+            None => {
+                log::info!("prove_state receipt pending");
+            }
         }
     }
 }
@@ -186,8 +212,9 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
             return None;
         }
     };
+
     if logs.is_empty() {
-        log::warn!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
+        log::error!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
         return None;
     }
     let target_log = match logs.iter().find(|log| log.topics[1].to_low_u64_be() == batch_index) {
@@ -209,7 +236,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         U64::from(1)
     };
     let filter = l1_rollup.challenge_state_filter().filter.from_block(start).address(l1_rollup.address());
-    let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
+    let mut logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
             log::error!("l1_rollup.challenge_state.get_logs error: {:#?}", e);
@@ -217,29 +244,29 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         }
     };
     log::debug!("l1_rollup.challenge_state.get_logs.len = {:#?}", logs.len());
-    let log = match logs.first() {
-        Some(log) => log,
-        None => {
-            log::debug!("no challenge state logs, latest blocknum = {:#?}", latest);
-            return None;
-        }
-    };
-    let batch_index: u64 = log.topics[1].to_low_u64_be();
-
-    let batch_in_challenge: bool = match l1_rollup.batch_in_challenge(batch_index).await {
-        Ok(x) => x,
-        Err(e) => {
-            log::info!("query l1_rollup.batch_in_challenge error, batch index = {:#?}, {:#?}", batch_index, e);
-            return None;
-        }
-    };
-
-    if batch_in_challenge == false {
-        log::info!("batch status not in challenge, batch index = {:#?}", batch_index);
+    if logs.is_empty() {
+        log::debug!("no challenge state logs, latest blocknum = {:#?}", latest);
         return None;
     }
+    logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
 
-    Some(batch_index)
+    for log in logs {
+        let batch_index: u64 = log.topics[1].to_low_u64_be();
+        let batch_in_challenge: bool = match l1_rollup.batch_in_challenge(U256::from(batch_index)).await {
+            Ok(x) => x,
+            Err(e) => {
+                log::info!("query l1_rollup.batch_in_challenge error, batch index = {:#?}, {:#?}", batch_index, e);
+                return None;
+            }
+        };
+
+        if batch_in_challenge {
+            return Some(batch_index);
+        }
+        log::info!("batch status not in challenge, batch index = {:#?}", batch_index);
+    }
+    log::info!("all batch's status not in challenge now");
+    None
 }
 
 async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec<Vec<u64>>> {
@@ -260,13 +287,13 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
     //Step2. Parse transaction data
     let data = tx.input;
     if data.is_empty() {
-        log::warn!("tx.input is empty, tx_hash =  {:#?}", hash);
+        log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", hash);
         return None;
     }
     let param = if let Ok(_param) = CommitBatchCall::decode(&data) {
         _param
     } else {
-        log::error!("decode tx.input error, tx_hash =  {:#?}", hash);
+        log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", hash);
         return None;
     };
     let chunks: Vec<Bytes> = param.batch_data.chunks;
@@ -290,24 +317,26 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
         // decode blocks from chunk
         // |   1 byte   | 60 bytes | ... | 60 bytes |
         // | num blocks |  block 1 | ... |  block n |
-        let num_blocks = U256::from_big_endian(bs.get(..1).unwrap());
+        let num_blocks = U256::from_big_endian(bs.get(..1)?);
         for i in 0..num_blocks.as_usize() {
-            let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8)).unwrap());
+            let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8))?);
             chunk_bn.push(block_num.as_u64());
         }
-        log::debug!("decode_chunks_blocknum: {:#?}", chunk_bn);
 
         chunk_with_blocks.push(chunk_bn);
     }
 
+    log::debug!("decode_chunks_blocknum: {:#?}", chunk_with_blocks);
     return Some(chunk_with_blocks);
 }
 
 #[tokio::test]
 async fn test_decode_chunks() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
     use std::fs::File;
     use std::io::Read;
-    let mut file = File::open("./src/input.data").unwrap();
+    let mut file = File::open("./src/staking.data").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
     let input = Bytes::from_str(contents.as_str()).unwrap();

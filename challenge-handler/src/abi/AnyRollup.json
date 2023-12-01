@@ -363,9 +363,9 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
+        "internalType": "uint64",
         "name": "batchIndex",
-        "type": "uint256"
+        "type": "uint64"
       }
     ],
     "name": "batchInChallenge",
@@ -488,28 +488,6 @@
             "internalType": "bytes32",
             "name": "withdrawalRoot",
             "type": "bytes32"
-          },
-          {
-            "components": [
-              {
-                "internalType": "uint256",
-                "name": "version",
-                "type": "uint256"
-              },
-              {
-                "internalType": "uint256[]",
-                "name": "signers",
-                "type": "uint256[]"
-              },
-              {
-                "internalType": "bytes",
-                "name": "signature",
-                "type": "bytes"
-              }
-            ],
-            "internalType": "struct IRollup.BatchSignature",
-            "name": "signature",
-            "type": "tuple"
           }
         ],
         "internalType": "struct IRollup.BatchData",
