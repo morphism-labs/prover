@@ -45,6 +45,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("address({:#?})  is_challenger: {:#?}", challenger_address, is_challenger);
 
+    let finalization_period = l1_rollup.finalization_period_seconds().await?;
+    let proof_window = l1_rollup.proof_window().await?;
+    log::info!("finalization_period: ({:#?})  proof_window: {:#?}", finalization_period, proof_window);
+
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
         Err(e) => {
@@ -86,7 +90,13 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let tx = l1_rollup.challenge_state(batch_index);
+    let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(batch_index)).await?;
+    if is_batch_finalized {
+        log::info!("is_batch_finalized = true, No need for challenge");
+        return Ok(());
+    }
+    // l1_rollup.connect()
+    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index);
     let rt = tx.send().await;
     let pending_tx = match rt {
         Ok(pending_tx) => {
@@ -94,7 +104,14 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             pending_tx
         }
         Err(e) => {
-            log::error!("send tx of challenge_state error: {:#?}", e);
+            log::error!("send tx of challenge_state error hex: {:#?}", e);
+            match e {
+                ContractError::Revert(data) => {
+                    let msg = String::decode_with_selector(&data).unwrap();
+                    log::error!("send tx of challenge_state error msg: {:#?}", msg);
+                }
+                _ => {}
+            }
             return Ok(());
         }
     };
