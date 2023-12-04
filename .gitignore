@@ -14,6 +14,6 @@ target/
 *.pdb
 prove_params
 # configs
-out.log
+*.log
 .env
 proof
