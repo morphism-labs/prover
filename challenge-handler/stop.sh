@@ -1,1 +1,1 @@
-pkill -9 challenge-handler
+pkill -9 challenge

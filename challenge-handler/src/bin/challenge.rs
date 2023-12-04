@@ -58,8 +58,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("latest blocknum = {:#?}", latest);
 
-    let start = if latest > U64::from(200) {
-        latest - U64::from(200)
+    let start = if latest > U64::from(600) {
+        latest - U64::from(600)
     } else {
         U64::from(1)
     };
