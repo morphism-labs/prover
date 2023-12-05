@@ -46,6 +46,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("address({:#?})  is_challenger: {:#?}", challenger_address, is_challenger);
 
+    
+    let challenger_balance = l1_provider.get_balance(challenger_address, None).await.unwrap();
+    log::info!("challenger_eth_balance: {:#?}", challenger_balance);
+
     let finalization_period = l1_rollup.finalization_period_seconds().await?;
     let proof_window = l1_rollup.proof_window().await?;
     log::info!("finalization_period: ({:#?})  proof_window: {:#?}", finalization_period, proof_window);
@@ -100,7 +104,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     // l1_rollup.connect()
-    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index);
+    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(1);
     let rt = tx.send().await;
     let pending_tx = match rt {
         Ok(pending_tx) => {
