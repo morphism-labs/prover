@@ -59,7 +59,6 @@ async fn main() {
 
 // Add pending prove request to queue
 async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>, param: String) -> String {
-    
     // Verify parameter is not empty
     if param.is_empty() {
         return String::from("request is empty");
@@ -88,8 +87,22 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return String::from("add prove batch fail, please waiting for the pending task to complete");
     }
 
+    let fs: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
+    for entry in fs.unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .to_str()
+            .unwrap()
+            .contains(format!("/batch_{}", prove_request.batch_index).as_str())
+        {
+            log::warn!("Prover is proving this batch: {:#?}", prove_request.batch_index);
+            return String::from("Prover is proving this batch");
+        }
+    }
+
     let proof = query_proof(prove_request.batch_index.to_string()).await;
     if !proof.proof_data.is_empty() || !proof.pi_data.is_empty() {
+        log::warn!("there are already proven results: {:#?}", prove_request.batch_index);
         return String::from("there are already proven results");
     }
     // Add request to queue

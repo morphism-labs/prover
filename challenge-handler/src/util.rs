@@ -1,5 +1,7 @@
 use std::env::var;
 
+use crate::handler::ProveRequest;
+
 pub fn call_prover(param: String, function: &str) -> Option<String> {
     let prover_rpc = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
 
@@ -30,4 +32,34 @@ pub fn call_prover(param: String, function: &str) -> Option<String> {
     };
 
     Some(rt_text)
+}
+
+#[tokio::test]
+async fn test_call_prover() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    dotenv::dotenv().ok();
+
+    let request = ProveRequest {
+        batch_index: 12,
+        chunks: vec![vec![1], vec![2]],
+        rpc: "http://localhost:3030".to_string(),
+    };
+
+    let rt = tokio::task::spawn_blocking(move || call_prover(serde_json::to_string(&request).unwrap(), "/prove_batch"))
+        .await
+        .unwrap();
+
+    match rt {
+        Some(info) => {
+            if info.eq("success") {
+                log::info!("successfully submitted prove task, waiting for proof to be generated");
+            } else {
+                log::error!("submitt prove task failed: {:#?}", info);
+            }
+        }
+        None => {
+            log::error!("submitt prove task failed");
+        }
+    }
 }
