@@ -105,6 +105,9 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         log::warn!("there are already proven results: {:#?}", prove_request.batch_index);
         return String::from("there are already proven results");
     }
+
+    log::info!("add pending req of batch: {:#?}", prove_request.batch_index);
+
     // Add request to queue
     queue.lock().await.push(prove_request);
 
