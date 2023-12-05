@@ -14,8 +14,8 @@ use std::time::Duration;
  */
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
+    // Prepare env.
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     dotenv().ok();
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
@@ -36,6 +36,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let challenger_address = l1_signer.address();
     let l1_rollup = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, l1_signer);
 
+    // Check rollup state.
     let is_challenger: bool = match l1_rollup.is_challenger(challenger_address).await {
         Ok(x) => x,
         Err(e) => {
@@ -49,6 +50,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let proof_window = l1_rollup.proof_window().await?;
     log::info!("finalization_period: ({:#?})  proof_window: {:#?}", finalization_period, proof_window);
 
+
+    // Search for the latest batch 
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
         Err(e) => {
@@ -57,14 +60,13 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     log::info!("latest blocknum = {:#?}", latest);
-
-    let start = if latest > U64::from(600) {
-        latest - U64::from(600)
+    let start = if latest > U64::from(200) {
+        latest - U64::from(200)
     } else {
         U64::from(1)
     };
     let filter = l1_rollup.commit_batch_filter().filter.from_block(start).address(l1_rollup.address());
-    let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
+    let mut logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
             log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
@@ -73,9 +75,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     if logs.is_empty() {
-        log::error!("no commit_batch log");
+        log::error!("There have been no commit_batch logs for the last 200 blocks.");
         return Ok(());
     }
+    logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
     let batch_index = match logs.last() {
         Some(log) => log.topics[1].to_low_u64_be(),
         None => {
@@ -90,6 +93,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    // Challenge state
     let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(batch_index)).await?;
     if is_batch_finalized {
         log::info!("is_batch_finalized = true, No need for challenge");
