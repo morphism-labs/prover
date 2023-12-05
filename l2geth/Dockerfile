@@ -1,4 +1,4 @@
-FROM  morphism-geth:latest
+FROM  morph-geth:latest
 
 RUN mkdir -p /l2geth/keystore
 

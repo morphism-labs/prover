@@ -76,6 +76,13 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             None => continue,
         };
         log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
+        match query_proof(batch_index).await {
+            Some(_) => {
+                log::info!("query proof and prove state: {:#?}", batch_index);
+                prove_state(batch_index, &l1_rollup, &l1_provider).await;
+            }
+            None => (),
+        }
 
         //Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
         let hash = match query_challenged_batch(latest, &l1_rollup, batch_index, &l1_provider).await {
@@ -113,41 +120,23 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
         }
 
         // Step5. query proof and prove onchain state.
-        std::thread::sleep(Duration::from_secs((4800 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 20min，batch_prove_time = 24min；
+        std::thread::sleep(Duration::from_secs((4800 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
+        log::info!("sleep finish, query proof and prove state: {:#?}", batch_index);
         prove_state(batch_index, &l1_rollup, &l1_provider).await;
     }
 }
+
 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
         std::thread::sleep(Duration::from_secs(12));
 
-        // Make a call to the Prove server.
-        let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "/query_proof"))
-            .await
-            .unwrap();
-        let rt_text = match rt {
-            Some(info) => info,
-            None => {
-                log::error!("query proof failed");
-                continue;
-            }
-        };
-
-        let prove_result: ProveResult = match serde_json::from_str(rt_text.as_str()) {
-            Ok(pr) => pr,
-            Err(_) => {
-                log::error!("deserialize prove_result failed, batch index = {:#?}", batch_index);
-                return false;
-            }
-        };
-
-        if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
-            log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
-            continue;
+        let prove_result = query_proof(batch_index).await;
+        if prove_result.is_none() {
+            return false;
         }
 
-        let aggr_proof = match Bytes::decode(prove_result.proof_data) {
+        let aggr_proof = match Bytes::decode(prove_result.unwrap().proof_data) {
             Ok(ap) => ap,
             Err(_) => {
                 log::error!("decode proof_data failed, batch index = {:#?}", batch_index);
@@ -190,6 +179,35 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
         }
     }
+}
+
+async fn query_proof(batch_index: u64) -> Option<ProveResult> {
+    // Make a call to the Prove server.
+    let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "/query_proof"))
+        .await
+        .unwrap();
+    let rt_text = match rt {
+        Some(info) => info,
+        None => {
+            log::error!("query proof failed");
+            return None;
+        }
+    };
+
+    let prove_result: ProveResult = match serde_json::from_str(rt_text.as_str()) {
+        Ok(pr) => pr,
+        Err(_) => {
+            log::error!("deserialize prove_result failed, batch index = {:#?}", batch_index);
+            return None;
+        }
+    };
+
+    if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
+        log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
+        return None;
+    }
+
+    return Some(prove_result);
 }
 
 async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {

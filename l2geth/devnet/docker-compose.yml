@@ -6,7 +6,7 @@ volumes:
 
 services:
   sequencer_geth_prover:
-    image: morphism/l2geth:latest
+    image: morph/l2geth:latest
     ports:
       - "6688:8545"
     healthcheck:
@@ -26,7 +26,7 @@ services:
     depends_on:
       sequencer_geth_prover:
         condition: service_started
-    image: morphism-node:latest
+    image: morph-node:latest
     ports:
       - "21666:26656"
     environment:
