@@ -104,7 +104,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     // l1_rollup.connect()
-    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(1);
+    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(10u64.pow(18));
     let rt = tx.send().await;
     let pending_tx = match rt {
         Ok(pending_tx) => {
