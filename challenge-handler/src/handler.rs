@@ -126,7 +126,6 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
     }
 }
 
-
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
         std::thread::sleep(Duration::from_secs(12));
@@ -144,7 +143,11 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
         //         return false;
         //     }
         // };
-        log::info!("starting prove state onchain, batch index = {:#?}, aggr_proof = {:#?}", batch_index, aggr_proof);
+        log::info!(
+            "starting prove state onchain, batch index = {:#?}, aggr_proof = {:#?}",
+            batch_index,
+            aggr_proof
+        );
 
         let tx = l1_rollup.prove_state(30, aggr_proof);
         let rt = tx.send().await;
@@ -243,15 +246,30 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
         log::error!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
         return None;
     }
-    let target_log = match logs.iter().find(|log| log.topics[1].to_low_u64_be() == batch_index) {
-        Some(log) => log,
-        None => {
-            log::error!("find commit_batch log error, batch index = {:?}", batch_index);
-            return None;
+
+    for log in logs {
+        if log.topics[1].to_low_u64_be() != batch_index {
+            continue;
         }
-    };
-    let hash = target_log.transaction_hash.unwrap();
-    Some(hash)
+        let tx_hash = log.transaction_hash.unwrap();
+        let receipt = l1_provider.get_transaction_receipt(tx_hash).await.unwrap();
+        match receipt {
+            Some(tr) => {
+                match tr.status.unwrap().as_u64() {
+                    1 => return Some(tx_hash),
+                    _ => {
+                        log::warn!("commit_batch receipt is fail: {:#?}", tr);
+                        continue;
+                    }
+                };
+            }
+            None => {
+                log::warn!("no commit_batch receipt, batch index = {:?}, tx_hash = {:?}", batch_index, tx_hash);
+            }
+        }
+    }
+    log::error!("unable to find valid commit_batch log, batch index = {:?}", batch_index);
+    None
 }
 
 async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
@@ -259,7 +277,6 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         // Depends on challenge period
         //latest - U64::from(7200 * 3)
         U64::from(1)
-
     } else {
         U64::from(1)
     };
