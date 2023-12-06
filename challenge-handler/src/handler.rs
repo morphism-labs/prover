@@ -157,7 +157,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
                 log::error!("send tx of prove_state error: {:#?}", e);
                 match e {
                     ContractError::Revert(data) => {
-                        let msg = String::decode_with_selector(&data).unwrap();
+                        let msg = String::decode(&data).unwrap();
                         log::error!("send tx of prove_state error msg: {:#?}", msg);
                     }
                     _ => {}
