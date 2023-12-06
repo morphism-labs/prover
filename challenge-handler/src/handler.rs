@@ -144,7 +144,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
         //         return false;
         //     }
         // };
-        log::info!("starting prove state onchain, batch index = {:#?}", batch_index);
+        log::info!("starting prove state onchain, batch index = {:#?}, aggr_proof = {:#?}", batch_index, aggr_proof);
 
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
@@ -155,6 +155,13 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
             Err(e) => {
                 log::error!("send tx of prove_state error: {:#?}", e);
+                match e {
+                    ContractError::Revert(data) => {
+                        let msg = String::decode_with_selector(&data).unwrap();
+                        log::error!("send tx of prove_state error msg: {:#?}", msg);
+                    }
+                    _ => {}
+                }
                 continue;
             }
         };
