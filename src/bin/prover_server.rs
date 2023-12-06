@@ -4,6 +4,7 @@ use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -203,7 +204,28 @@ async fn test_query_proof() {
     //         return;
     //     }
     // };
+    let mut proof_data1 = aggr_proof.to_vec();
+
+    // println!("{:?}", aggr_proof);
+
+    // let proof_path = Path("proof_batch_agg.data");
+    let proof_path = Path::new("proof/batch_1/proof_batch_agg.data");
+
+    let mut proof_data = Vec::new();
+    // let mut proof_data = ethers::types::Bytes::new();
+
+    match fs::File::open(proof_path) {
+        Ok(mut file) => {
+            file.read_to_end(&mut proof_data).unwrap();
+        }
+        Err(e) => {
+            log::error!("Failed to load proof_data: {:#?}", e);
+        }
+    }
     println!("{:?}", aggr_proof);
+    println!("{:?}", aggr_proof);
+
+
 }
 
 #[tokio::test]

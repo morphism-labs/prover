@@ -117,24 +117,24 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
                 // params
                 // batch_prover
-                // log::info!("starting generate evm verifier");
-                // let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
-                //     batch_prover.inner.params(*LAYER4_DEGREE).clone(),
-                //     &batch_prover.get_vk().unwrap(),
-                // );
+                log::info!("starting generate evm verifier");
+                let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
+                    batch_prover.inner.params(*LAYER4_DEGREE).clone(),
+                    &batch_prover.get_vk().unwrap(),
+                );
 
-                // let instances = proof.clone().proof_to_verify().instances();
-                // let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
+                let instances = proof.clone().proof_to_verify().instances();
+                let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
 
-                // let evm_proof = prover::EvmProof::new(
-                //     proof.clone().proof_to_verify().proof().to_vec(),
-                //     &proof.proof_to_verify().instances(),
-                //     num_instances,
-                //     batch_prover.inner.pk(LayerId::Layer4.id()),
-                // );
-                // fs::create_dir_all("evm_verifier").unwrap();
-                // verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
-                // log::info!("generate evm verifier complate");
+                let evm_proof = prover::EvmProof::new(
+                    proof.clone().proof_to_verify().proof().to_vec(),
+                    &proof.proof_to_verify().instances(),
+                    num_instances,
+                    batch_prover.inner.pk(LayerId::Layer4.id()),
+                );
+                fs::create_dir_all("evm_verifier").unwrap();
+                verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
+                log::info!("generate evm verifier complate");
             }
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }
