@@ -1,12 +1,11 @@
+use axum::extract::Extension;
+use axum::{routing::post, Router};
 use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-use axum::extract::Extension;
-use axum::{routing::post, Router};
 
 use tower_http::add_extension::AddExtensionLayer;
 use tower_http::cors::CorsLayer;
@@ -18,8 +17,8 @@ use zkevm_prover::utils::FS_PROOF;
 pub struct ProveResult {
     pub error_msg: String,
     pub error_code: String,
-    pub proof_data: String,
-    pub pi_data: String,
+    pub proof_data: Vec<u8>,
+    pub pi_data: Vec<u8>,
 }
 
 // Main async function to start prover service.
@@ -127,8 +126,8 @@ async fn query_proof(batch_index: String) -> ProveResult {
     let mut result = ProveResult {
         error_msg: String::from(""),
         error_code: String::from(""),
-        proof_data: String::from(""),
-        pi_data: String::from(""),
+        proof_data: Vec::new(),
+        pi_data: Vec::new(),
     };
     for entry in fs.unwrap() {
         let path = entry.unwrap().path();
@@ -139,10 +138,12 @@ async fn query_proof(batch_index: String) -> ProveResult {
         {
             //pi_batch_agg.data
             let proof_path = path.join("proof_batch_agg.data");
-            let mut proof_data = String::new();
+            // let mut proof_data = String::new();
+            let mut proof_data = Vec::new();
+
             match fs::File::open(proof_path) {
                 Ok(mut file) => {
-                    file.read_to_string(&mut proof_data).unwrap();
+                    file.read_to_end(&mut proof_data).unwrap();
                 }
                 Err(e) => {
                     log::error!("Failed to load proof_data: {:#?}", e);
@@ -152,10 +153,12 @@ async fn query_proof(batch_index: String) -> ProveResult {
             result.proof_data = proof_data;
 
             let pi_path = path.join("pi_batch_agg.data");
-            let mut pi_data = String::new();
+            // let mut pi_data = String::new();
+            let mut pi_data = Vec::new();
+
             match fs::File::open(pi_path) {
                 Ok(mut file) => {
-                    file.read_to_string(&mut pi_data).unwrap();
+                    file.read_to_end(&mut pi_data).unwrap();
                 }
                 Err(e) => {
                     log::error!("Failed to load pi_data: {:#?}", e);
@@ -180,8 +183,27 @@ async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>
 
 #[tokio::test]
 async fn test_query_proof() {
-    let proof = query_proof("4".to_string()).await;
-    println!("{:?}", proof);
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
+    let proof = query_prove_result("1".to_string()).await;
+    let prove_result: ProveResult = match serde_json::from_str(proof.as_str()) {
+        Ok(pr) => pr,
+        Err(_) => {
+            log::error!("deserialize prove_result failed, batch index = {:#?}", 1);
+            return;
+        }
+    };
+    use ethers::abi::AbiDecode;
+    use std::str::FromStr;
+
+    let aggr_proof = ethers::types::Bytes::from(prove_result.proof_data);
+    //     Ok(ap) => ap,
+    //     Err(e) => {
+    //         log::error!("decode proof_data failed, error = {:#?}", e);
+    //         return;
+    //     }
+    // };
+    println!("{:?}", aggr_proof);
 }
 
 #[tokio::test]

@@ -46,7 +46,7 @@ async fn test_call_prover() {
         rpc: "http://localhost:3030".to_string(),
     };
 
-    let rt = tokio::task::spawn_blocking(move || call_prover(serde_json::to_string(&request).unwrap(), "/prove_batch"))
+    let rt = tokio::task::spawn_blocking(move || call_prover("1".to_string(), "/query_proof"))
         .await
         .unwrap();
 

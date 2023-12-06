@@ -25,8 +25,8 @@ pub struct ProveRequest {
 pub struct ProveResult {
     pub error_msg: String,
     pub error_code: String,
-    pub proof_data: String,
-    pub pi_data: String,
+    pub proof_data: Vec<u8>,
+    pub pi_data: Vec<u8>,
 }
 
 type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
@@ -34,7 +34,7 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
     dotenv().ok();
-    std::thread::sleep(Duration::from_secs(2));
+    // std::thread::sleep(Duration::from_secs(2));
 
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
@@ -136,13 +136,14 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             return false;
         }
 
-        let aggr_proof = match Bytes::decode(prove_result.unwrap().proof_data) {
-            Ok(ap) => ap,
-            Err(_) => {
-                log::error!("decode proof_data failed, batch index = {:#?}", batch_index);
-                return false;
-            }
-        };
+        let aggr_proof = Bytes::from(prove_result.unwrap().proof_data);
+        // {
+        //     Ok(ap) => ap,
+        //     Err(_) => {
+        //         log::error!("decode proof_data failed, batch index = {:#?}", batch_index);
+        //         return false;
+        //     }
+        // };
         log::info!("starting prove state onchain, batch index = {:#?}", batch_index);
 
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
@@ -249,7 +250,9 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
 async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        latest - U64::from(7200 * 3)
+        //latest - U64::from(7200 * 3)
+        U64::from(1)
+
     } else {
         U64::from(1)
     };
