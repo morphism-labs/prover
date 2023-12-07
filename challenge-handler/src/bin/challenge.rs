@@ -20,6 +20,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let private_key = var("CHALLENGER_PRIVATEKEY").expect("Cannot detect CHALLENGER_PRIVATEKEY env var");
+    let mut challenge_batch_index: u64 = var("CHALLENGE_BATCH_INDEX")
+        .expect("Cannot detect CHALLENGE_BATCH_INDEX env var")
+        .parse()
+        .expect("Cannot parse CHALLENGE_BATCH_INDEX env var");
     let challenge: bool = var("CHALLENGE")
         .expect("Cannot detect CHALLENGE env var")
         .parse()
@@ -46,7 +50,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("address({:#?})  is_challenger: {:#?}", challenger_address, is_challenger);
 
-    
     let challenger_balance = l1_provider.get_balance(challenger_address, None).await.unwrap();
     log::info!("challenger_eth_balance: {:#?}", challenger_balance);
 
@@ -54,8 +57,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let proof_window = l1_rollup.proof_window().await?;
     log::info!("finalization_period: ({:#?})  proof_window: {:#?}", finalization_period, proof_window);
 
-
-    // Search for the latest batch 
+    // Search for the latest batch
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
         Err(e) => {
@@ -97,14 +99,18 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    if challenge_batch_index == 0 {
+        challenge_batch_index = batch_index;
+    }
+
     // Challenge state
-    let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(batch_index)).await?;
+    let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(challenge_batch_index)).await?;
     if is_batch_finalized {
         log::info!("is_batch_finalized = true, No need for challenge");
         return Ok(());
     }
     // l1_rollup.connect()
-    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(10u64.pow(18));
+    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(challenge_batch_index).value(10u64.pow(18));
     let rt = tx.send().await;
     let pending_tx = match rt {
         Ok(pending_tx) => {
