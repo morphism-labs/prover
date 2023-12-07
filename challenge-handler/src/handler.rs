@@ -149,7 +149,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             aggr_proof
         );
 
-        let tx = l1_rollup.prove_state(30, aggr_proof);
+        let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
         let pending_tx = match rt {
             Ok(pending_tx) => {
