@@ -1,7 +1,5 @@
 use std::env::var;
 
-use crate::handler::ProveRequest;
-
 pub fn call_prover(param: String, function: &str) -> Option<String> {
     let prover_rpc = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
 
@@ -37,9 +35,9 @@ pub fn call_prover(param: String, function: &str) -> Option<String> {
 #[tokio::test]
 async fn test_call_prover() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     dotenv::dotenv().ok();
 
+    use crate::handler::ProveRequest;
     let request = ProveRequest {
         batch_index: 12,
         chunks: vec![vec![1], vec![2]],

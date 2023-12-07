@@ -1,8 +1,6 @@
-use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS, FS_PROVE_SEED};
+use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS};
 use dotenv::dotenv;
 use ethers::providers::Provider;
-use halo2_proofs::halo2curves::bn256::Bn256;
-use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use prover::aggregator::Prover as BatchProver;
 use prover::config::{LayerId, LAYER4_DEGREE};
 use prover::utils::chunk_trace_to_witness_block;
@@ -28,11 +26,17 @@ pub struct ProveRequest {
 /// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     dotenv().ok();
+    let generate_verifier: bool = var("GENERATE_EVM_VERIFIER")
+        .expect("GENERATE_EVM_VERIFIER env var")
+        .parse()
+        .expect("Cannot parse GENERATE_EVM_VERIFIER env var");
+
     env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
+
     let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, "./configs");
     'task: loop {
-        thread::sleep(Duration::from_millis(2000));
+        thread::sleep(Duration::from_millis(4000));
         log::info!("starting take request");
 
         // Step1. pop request from queue
@@ -50,6 +54,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 continue;
             }
         };
+
         // Step2. fetch trace
         let provider = match Provider::try_from(&prove_request.rpc) {
             Ok(provider) => provider,
@@ -70,10 +75,17 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         fs::create_dir_all(proof_path.clone()).unwrap();
 
         // Step3. start chunk prove
-        let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
+        let mut chunk_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
         for (index, chunk_trace) in chunk_traces.iter().enumerate() {
-            let witness_chunk = chunk_trace_to_witness_block(chunk_trace.to_vec()).unwrap();
-            let chunk_info = ChunkHash::from_witness_block(&witness_chunk, false);
+            let chunk_witness = match chunk_trace_to_witness_block(chunk_trace.to_vec()) {
+                Ok(_witness) => _witness,
+                Err(e) => {
+                    log::error!("convert trace to witness error: {:#?}", e);
+                    continue;
+                }
+            };
+            let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
+
             log::info!(
                 "starting chunk prove, batch index = {:#?},chunk index = {:#?}",
                 &prove_request.batch_index,
@@ -81,24 +93,21 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             );
             let chunk_proof: ChunkProof =
                 match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(proof_path.as_str())) {
-                    Ok(proof) => {
-                        log::info!("chunk prove result is: {:#?}", proof);
-                        proof
-                    }
+                    Ok(proof) => proof,
                     Err(e) => {
                         log::error!("chunk prove err: {:#?}", e);
                         continue 'task;
                     }
                 };
+
             //save chunk.protocol
             let protocol = &chunk_proof.protocol;
             let mut params_file = File::create("configs/chunk.protocol").unwrap();
             params_file.write_all(&protocol[..]).unwrap();
-
-            chunk_hashes_proofs.push((chunk_info, chunk_proof));
+            chunk_proofs.push((chunk_hash, chunk_proof));
         }
 
-        if chunk_hashes_proofs.len() != chunk_traces.len() {
+        if chunk_proofs.len() != chunk_traces.len() {
             log::error!("chunk proofs len err");
             continue;
         }
@@ -106,39 +115,39 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         // Step4. start batch prove
         log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
         let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, "./configs");
-        let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(proof_path.clone().as_str()));
+        let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
-                // log::info!("batch prove result is: {:#?}", proof);
                 log::info!("batch prove complate");
-
-                // batch_prover.inner.params(26);
                 // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
-
-                // params
-                // batch_prover
-                // log::info!("starting generate evm verifier");
-                // let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
-                //     batch_prover.inner.params(*LAYER4_DEGREE).clone(),
-                //     &batch_prover.get_vk().unwrap(),
-                // );
-
-                // let instances = proof.clone().proof_to_verify().instances();
-                // let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
-
-                // let evm_proof = prover::EvmProof::new(
-                //     proof.clone().proof_to_verify().proof().to_vec(),
-                //     &proof.proof_to_verify().instances(),
-                //     num_instances,
-                //     batch_prover.inner.pk(LayerId::Layer4.id()),
-                // );
-                // fs::create_dir_all("evm_verifier").unwrap();
-                // verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
-                // log::info!("generate evm verifier complate");
+                if generate_verifier {
+                    generate_evm_verifier(batch_prover, proof);
+                }
             }
             Err(e) => log::error!("batch prove err: {:#?}", e),
         }
     }
+}
+
+fn generate_evm_verifier(mut batch_prover: BatchProver, proof: prover::BatchProof) {
+    log::info!("starting generate evm verifier");
+    let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
+        batch_prover.inner.params(*LAYER4_DEGREE).clone(),
+        &batch_prover.get_vk().unwrap(),
+    );
+
+    let instances = proof.clone().proof_to_verify().instances();
+    let num_instances: Vec<usize> = instances.iter().map(|l| l.len()).collect();
+
+    let evm_proof = prover::EvmProof::new(
+        proof.clone().proof_to_verify().proof().to_vec(),
+        &proof.proof_to_verify().instances(),
+        num_instances,
+        batch_prover.inner.pk(LayerId::Layer4.id()),
+    );
+    fs::create_dir_all("evm_verifier").unwrap();
+    verifier.evm_verify(&evm_proof.unwrap(), Some("evm_verifier"));
+    log::info!("generate evm verifier complate");
 }
 
 async fn get_chunk_traces(

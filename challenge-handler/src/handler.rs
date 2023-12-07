@@ -109,12 +109,12 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                 if info.eq("success") {
                     log::info!("successfully submitted prove task, waiting for proof to be generated");
                 } else {
-                    log::error!("submitt prove task failed: {:#?}", info);
+                    log::error!("submit prove task failed: {:#?}", info);
                     continue;
                 }
             }
             None => {
-                log::error!("submitt prove task failed");
+                log::error!("submit prove task failed");
                 continue;
             }
         }
@@ -130,19 +130,12 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
     loop {
         std::thread::sleep(Duration::from_secs(12));
 
-        let prove_result = query_proof(batch_index).await;
-        if prove_result.is_none() {
-            return false;
-        }
+        let prove_result = match query_proof(batch_index).await {
+            Some(pr) => pr,
+            None => continue,
+        };
 
-        let aggr_proof = Bytes::from(prove_result.unwrap().proof_data);
-        // {
-        //     Ok(ap) => ap,
-        //     Err(_) => {
-        //         log::error!("decode proof_data failed, batch index = {:#?}", batch_index);
-        //         return false;
-        //     }
-        // };
+        let aggr_proof = Bytes::from(prove_result.proof_data);
         log::info!(
             "starting prove state onchain, batch index = {:#?}, aggr_proof = {:#?}",
             batch_index,
@@ -160,7 +153,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
                 log::error!("send tx of prove_state error: {:#?}", e);
                 match e {
                     ContractError::Revert(data) => {
-                        let msg = String::decode(&data).unwrap();
+                        let msg = String::decode(&data).unwrap_or(String::from("decode contract revert error"));
                         log::error!("send tx of prove_state error msg: {:#?}", msg);
                     }
                     _ => {}
@@ -169,14 +162,14 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
         };
 
-        std::thread::sleep(Duration::from_secs(16));
+        std::thread::sleep(Duration::from_secs(12)); //TODO
         let receipt = l1_provider.get_transaction_receipt(pending_tx.tx_hash()).await.unwrap();
 
         match receipt {
             Some(tr) => {
                 match tr.status.unwrap().as_u64() {
                     1 => {
-                        log::info!("prove_state receipt success: {:#?}", tr);
+                        log::info!("prove_state receipt success: {:#?}", tr.transaction_hash);
                         return true;
                     }
                     _ => {
@@ -186,12 +179,16 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
             // Maybe still pending
             None => {
-                log::info!("prove_state receipt pending");
+                log::info!("prove_state receipt pending: {:#?}", pending_tx.tx_hash());
             }
         }
     }
 }
 
+/**
+ * Query the zkevm proof for the specified batch index.
+ * Only return result when proof data exists, otherwise return None.
+ */
 async fn query_proof(batch_index: u64) -> Option<ProveResult> {
     // Make a call to the Prove server.
     let rt = tokio::task::spawn_blocking(move || util::call_prover(batch_index.to_string(), "/query_proof"))
@@ -275,7 +272,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
 async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        //latest - U64::from(7200 * 3)
+        // latest - U64::from(7200 * 3)
         U64::from(1)
     } else {
         U64::from(1)
@@ -290,7 +287,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
     };
     log::debug!("l1_rollup.challenge_state.get_logs.len = {:#?}", logs.len());
     if logs.is_empty() {
-        log::debug!("no challenge state logs, latest blocknum = {:#?}", latest);
+        log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
     }
     logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
@@ -355,7 +352,6 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
 
     let mut chunk_with_blocks: Vec<Vec<u64>> = vec![];
     for chunk in chunks.iter() {
-        //&ethers::types::Bytes
         let mut chunk_bn: Vec<u64> = vec![];
         let bs: &[u8] = chunk;
 

@@ -4,7 +4,6 @@ use env_logger::Env;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -184,6 +183,7 @@ async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>
 
 #[tokio::test]
 async fn test_query_proof() {
+    use std::path::Path;
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     let proof = query_prove_result("1".to_string()).await;
@@ -223,9 +223,6 @@ async fn test_query_proof() {
         }
     }
     println!("{:?}", aggr_proof);
-    println!("{:?}", aggr_proof);
-
-
 }
 
 #[tokio::test]
