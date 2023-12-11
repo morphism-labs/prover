@@ -31,10 +31,11 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         .parse()
         .expect("Cannot parse GENERATE_EVM_VERIFIER env var");
 
-    env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
+    let fs_assets = var("SCROLL_PROVER_ASSETS_DIR").expect("SCROLL_PROVER_ASSETS_DIR env var");
+    // env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
 
-    let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, "./configs");
+    let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
     'task: loop {
         thread::sleep(Duration::from_millis(4000));
         log::info!("starting take request");

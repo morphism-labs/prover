@@ -7,7 +7,6 @@ use std::env::var;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 
 type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
@@ -22,10 +21,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let private_key = var("CHALLENGER_PRIVATEKEY").expect("Cannot detect CHALLENGER_PRIVATEKEY env var");
-    let mut challenge_batch: u64 = var("CHALLENGE_BATCH_INDEX")
-        .expect("Cannot detect CHALLENGE_BATCH_INDEX env var")
-        .parse()
-        .expect("Cannot parse CHALLENGE_BATCH_INDEX env var");
     let challenge: bool = var("CHALLENGE")
         .expect("Cannot detect CHALLENGE env var")
         .parse()
@@ -68,7 +63,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-
     log::info!("latest blocknum = {:#?}", latest);
     let start = if latest > U64::from(1000) {
         latest - U64::from(1000)
@@ -86,7 +80,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     if logs.is_empty() {
-        log::error!("There have been no commit_batch logs for the last 200 blocks.");
+        log::error!("There have been no commit_batch logs for the last 1000 blocks.");
         return Ok(());
     }
     logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));

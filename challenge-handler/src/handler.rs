@@ -77,6 +77,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             Some(_) => {
                 log::info!("query proof and prove state: {:#?}", batch_index);
                 prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                continue;
             }
             None => (),
         }

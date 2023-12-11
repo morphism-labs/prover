@@ -17,3 +17,4 @@ prove_params
 *.log
 .env
 proof
+local_configs

@@ -71,7 +71,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     // Check prev challenge
     match detecte_challenge(latest, &l1_rollup, &l1_provider).await {
         Some(true) => {
-            log::warn!("prev challenge net finalized");
+            log::warn!("prev challenge not finalized");
             return Ok(());
         }
         Some(false) => (),
@@ -121,9 +121,25 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     // Challenge state
     let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(challenge_batch)).await?;
     if is_batch_finalized {
-        log::info!("is_batch_finalized = true, No need for challenge");
+        log::info!("is_batch_finalized = true, No need for challenge, batch index = {:#?}", batch_index);
         return Ok(());
     }
+
+    let challenges = match l1_rollup.challenges(U256::from(batch_index)).await {
+        Ok(x) => x,
+        Err(e) => {
+            log::info!("query l1_rollup.challenges error, batch index = {:#?}, {:#?}", batch_index, e);
+            return Ok(());
+        }
+    };
+    log::info!("challenger = {:#?}", challenges.1);
+    log::info!("Address::default = {:#?}", Address::default());
+
+    if challenges.1 != Address::default() {
+        log::info!("already has challenge, batch index = {:#?}", batch_index);
+        return Ok(());
+    }
+
     // l1_rollup.connect()
     let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(challenge_batch).value(10u64.pow(18));
     let rt = tx.send().await;
