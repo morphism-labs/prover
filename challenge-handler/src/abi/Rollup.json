@@ -581,6 +581,11 @@
         "internalType": "bytes",
         "name": "skippedL1MessageBitmap",
         "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "blockNumber",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -815,6 +820,19 @@
   },
   {
     "inputs": [],
+    "name": "latestL2BlockNumber",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "layer2ChainId",
     "outputs": [
       {
@@ -997,11 +1015,50 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "_newPeriod",
+        "type": "uint256"
+      }
+    ],
+    "name": "updateFinalizePeriodSeconds",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "_maxNumTxInChunk",
         "type": "uint256"
       }
     ],
     "name": "updateMaxNumTxInChunk",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_newDepositAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "updateMinDepositAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_newWindow",
+        "type": "uint256"
+      }
+    ],
+    "name": "updateProofWindow",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

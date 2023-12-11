@@ -43,7 +43,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         let prove_request: ProveRequest = match prove_queue.lock().await.pop() {
             Some(req) => {
                 log::info!(
-                    "received prove request,batch index = {:#?}, chunks len = {:#?}",
+                    "received prove request, batch index = {:#?}, chunks len = {:#?}",
                     req.batch_index,
                     req.chunks.len()
                 );

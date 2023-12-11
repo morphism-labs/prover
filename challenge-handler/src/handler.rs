@@ -34,11 +34,8 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
     dotenv().ok();
-    // std::thread::sleep(Duration::from_secs(2));
-
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
-
     let _ = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
     let private_key = var("L1_ROLLUP_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
 
@@ -84,7 +81,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             None => (),
         }
 
-        //Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
+        // Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
         let hash = match query_challenged_batch(latest, &l1_rollup, batch_index, &l1_provider).await {
             Some(value) => value,
             None => continue,
@@ -129,7 +126,6 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
         std::thread::sleep(Duration::from_secs(12));
-
         let prove_result = match query_proof(batch_index).await {
             Some(pr) => pr,
             None => continue,
@@ -153,8 +149,8 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
                 log::error!("send tx of prove_state error: {:#?}", e);
                 match e {
                     ContractError::Revert(data) => {
-                        let msg = String::decode(&data).unwrap_or(String::from("decode contract revert error"));
-                        log::error!("send tx of prove_state error msg: {:#?}", msg);
+                        let msg = String::decode_with_selector(&data).unwrap_or(String::from("decode contract revert error"));
+                        log::error!("send tx of prove_state error, msg: {:#?}", msg);
                     }
                     _ => {}
                 }
@@ -162,25 +158,33 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
         };
 
-        std::thread::sleep(Duration::from_secs(12)); //TODO
-        let receipt = l1_provider.get_transaction_receipt(pending_tx.tx_hash()).await.unwrap();
-
-        match receipt {
-            Some(tr) => {
-                match tr.status.unwrap().as_u64() {
-                    1 => {
-                        log::info!("prove_state receipt success: {:#?}", tr.transaction_hash);
-                        return true;
-                    }
-                    _ => {
-                        log::error!("prove_state receipt fail: {:#?}", tr);
-                    }
-                };
+        let check_receipt = || async {
+            let receipt = l1_provider.get_transaction_receipt(pending_tx.tx_hash()).await;
+            if let Err(e) = receipt {
+                log::error!("get receipt of prove_state error, msg: {:#?}", e);
+                return false;
             }
-            // Maybe still pending
-            None => {
-                log::info!("prove_state receipt pending: {:#?}", pending_tx.tx_hash());
+            match receipt.unwrap() {
+                Some(tr) => {
+                    // Either 1 (success) or 0 (failure).
+                    match tr.status.unwrap_or_default().as_u64() {
+                        1 => log::info!("prove_state receipt success: {:#?}", tr.transaction_hash),
+                        _ => log::error!("prove_state receipt fail: {:#?}", tr),
+                    };
+                    return true;
+                }
+                // Maybe still pending
+                None => {
+                    log::info!("prove_state tx is pending: {:#?}", pending_tx.tx_hash());
+                    return false;
+                }
             }
+        };
+        for _ in 1..10 {
+            std::thread::sleep(Duration::from_secs(12));
+            if check_receipt().await {
+                return true;
+            };
         }
     }
 }
@@ -252,7 +256,7 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
         let receipt = l1_provider.get_transaction_receipt(tx_hash).await.unwrap();
         match receipt {
             Some(tr) => {
-                match tr.status.unwrap().as_u64() {
+                match tr.status.unwrap_or_default().as_u64() {
                     1 => return Some(tx_hash),
                     _ => {
                         log::warn!("commit_batch receipt is fail: {:#?}", tr);
@@ -328,6 +332,8 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
 
     //Step2. Parse transaction data
     let data = tx.input;
+    log::debug!("batch inspect: tx.input =  {:#?}", data);
+
     if data.is_empty() {
         log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", hash);
         return None;
@@ -339,10 +345,7 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
         return None;
     };
     let chunks: Vec<Bytes> = param.batch_data.chunks;
-    if let Some(value) = decode_chunks(chunks) {
-        return Some(value);
-    }
-    None
+    return decode_chunks(chunks);
 }
 
 fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
