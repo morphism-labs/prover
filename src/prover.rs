@@ -8,8 +8,6 @@ use prover::zkevm::Prover as ChunkProver;
 use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
 use serde::{Deserialize, Serialize};
 use std::env::var;
-use std::fs::File;
-use std::io::Write;
 use std::time::Duration;
 use std::{env, fs};
 use std::{sync::Arc, thread};
@@ -101,10 +99,6 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                     }
                 };
 
-            //save chunk.protocol
-            let protocol = &chunk_proof.protocol;
-            let mut params_file = File::create("configs/chunk.protocol").unwrap();
-            params_file.write_all(&protocol[..]).unwrap();
             chunk_proofs.push((chunk_hash, chunk_proof));
         }
 
@@ -115,7 +109,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
         // Step4. start batch prove
         log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
-        let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, "./configs");
+        let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
@@ -178,6 +172,9 @@ async fn get_chunk_traces(
 
 #[tokio::test]
 async fn test() {
+    use std::fs::File;
+    use std::io::Write;
+
     let protocol: Vec<u8> = vec![1, 2, 3, 4];
     std::fs::create_dir_all("configs").unwrap();
     let mut params_file = File::create("configs/chunk.protocol").unwrap();
