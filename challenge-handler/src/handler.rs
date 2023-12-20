@@ -29,6 +29,12 @@ pub struct ProveResult {
     pub pi_data: Vec<u8>,
 }
 
+mod task_status {
+    pub const STARTED: &str = "Started";
+    pub const PROVING: &str = "Proving";
+    pub const PROVED: &str = "Proved";
+}
+
 type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
@@ -104,11 +110,24 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 
         match rt {
             Some(info) => {
-                if info.eq("success") {
-                    log::info!("successfully submitted prove task, waiting for proof to be generated");
-                } else {
-                    log::error!("submit prove task failed: {:#?}", info);
-                    continue;
+                match info.as_str() {
+                    task_status::STARTED => log::info!("successfully submitted prove task, waiting for proof to be generated"),
+                    task_status::PROVING => {
+                        log::info!("waiting for proof to be generated");
+                        std::thread::sleep(Duration::from_secs(600)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
+                        prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                        continue;
+                    }
+                    task_status::PROVED => {
+                        log::info!("proof already generated");
+                        prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                        std::thread::sleep(Duration::from_secs(60)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
+                        continue;
+                    }
+                    _ => {
+                        log::error!("submit prove task failed: {:#?}", info);
+                        continue;
+                    }
                 }
             }
             None => {
@@ -126,7 +145,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
-        std::thread::sleep(Duration::from_secs(12));
+        std::thread::sleep(Duration::from_secs(300));
         let prove_result = match query_proof(batch_index).await {
             Some(pr) => pr,
             None => continue,
@@ -333,7 +352,7 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
 
     //Step2. Parse transaction data
     let data = tx.input;
-    log::debug!("batch inspect: tx.input =  {:#?}", data);
+    // log::debug!("batch inspect: tx.input =  {:#?}", data);
 
     if data.is_empty() {
         log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", hash);

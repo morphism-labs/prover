@@ -21,6 +21,12 @@ pub struct ProveResult {
     pub pi_data: Vec<u8>,
 }
 
+mod task_status {
+    pub const STARTED: &str = "Started";
+    pub const PROVING: &str = "Proving";
+    pub const PROVED: &str = "Proved";
+}
+
 // Main async function to start prover service.
 // 1. Initializes environment.
 // 2. Spawns management server.
@@ -56,7 +62,7 @@ async fn main() {
     prove_for_queue(prove_queue).await;
 }
 
-// Add pending prove request to queue
+// Add pending prove request to queue.
 async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>, param: String) -> String {
     // Verify parameter is not empty
     if param.is_empty() {
@@ -71,6 +77,7 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         Ok(req) => req,
         Err(_) => return String::from("deserialize proveRequest failed"),
     };
+    log::info!("recived prove request of batch_index: {:#?}", prove_request.batch_index);
 
     // Verify block number is greater than 0
     if prove_request.chunks.len() == 0 {
@@ -82,35 +89,61 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return String::from("invalid rpc url");
     }
 
-    if queue.lock().await.len() > 0 {
+    let mut queue_lock = queue.lock().await;
+    if queue_lock.len() > 0 {
         return String::from("add prove batch fail, please waiting for the pending task to complete");
     }
-
-    let fs: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
-    for entry in fs.unwrap() {
-        let path = entry.unwrap().path();
-        if path
-            .to_str()
-            .unwrap()
-            .contains(format!("/batch_{}", prove_request.batch_index).as_str())
-        {
-            log::warn!("Prover is proving this batch: {:#?}", prove_request.batch_index);
-            return String::from("Prover is proving this batch");
-        }
+    if let Some(value) = check_batch_status(&prove_request).await {
+        return value;
     }
-
-    let proof = query_proof(prove_request.batch_index.to_string()).await;
-    if !proof.proof_data.is_empty() || !proof.pi_data.is_empty() {
-        log::warn!("there are already proven results: {:#?}", prove_request.batch_index);
-        return String::from("there are already proven results");
-    }
-
+    let proof_path = FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
+    fs::create_dir_all(proof_path.clone()).unwrap();
     log::info!("add pending req of batch: {:#?}", prove_request.batch_index);
 
     // Add request to queue
-    queue.lock().await.push(prove_request);
+    queue_lock.push(prove_request);
+    String::from(task_status::STARTED)
+}
 
-    String::from("success")
+// Async function to check status of a proof request for a batch.
+// PROVING -> prover is proving this batch.
+// PROVED  -> there are already proven results.
+async fn check_batch_status(prove_request: &ProveRequest) -> Option<String> {
+    // Query proof data for the batch index.
+    let proof = query_proof(prove_request.batch_index.to_string()).await;
+
+    // If proof data is not empty, the batch has already been proven.
+    if !proof.proof_data.is_empty() || !proof.pi_data.is_empty() {
+        log::warn!("there are already proven results: {:#?}", prove_request.batch_index);
+        return Some(String::from(task_status::PROVED));
+    }
+
+    // Read proof directory.
+    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
+    let entries = match proof_dir {
+        Ok(entries) => entries,
+        Err(_) => return Some(String::from("Read proof dir error")),
+    };
+
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(_) => return Some(String::from("Read proof dir error")),
+        };
+
+        // If entry contains this batch index, it is currently being proven.
+        if path
+            .to_str()
+            .unwrap_or("nothing")
+            .ends_with(format!("batch_{}", prove_request.batch_index).as_str())
+        {
+            log::warn!("Prover is proving this batch: {:#?}", prove_request.batch_index);
+            return Some(String::from(task_status::PROVING));
+        }
+    }
+
+    // Batch not found in any state.
+    None
 }
 
 // Async function to query proof data for a given block number.
@@ -122,19 +155,33 @@ async fn query_prove_result(batch_index: String) -> String {
 }
 
 async fn query_proof(batch_index: String) -> ProveResult {
-    let fs: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
+    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
     let mut result = ProveResult {
-        error_msg: String::from(""),
-        error_code: String::from(""),
+        error_msg: String::new(),
+        error_code: String::new(),
         proof_data: Vec::new(),
         pi_data: Vec::new(),
     };
-    for entry in fs.unwrap() {
-        let path = entry.unwrap().path();
+    log::info!("query proof of batch_index: {:#?}", batch_index);
+
+    if proof_dir.is_err() {
+        result.error_msg = String::from("Read proof dir error");
+        return result;
+    }
+
+    for entry in proof_dir.unwrap() {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(_) => {
+                result.error_msg = String::from("Read proof dir error");
+                return result;
+            }
+        };
+
         if path
             .to_str()
-            .unwrap()
-            .contains(format!("/batch_{}", batch_index).as_str())
+            .unwrap_or("nothing")
+            .ends_with(format!("batch_{}", batch_index).as_str())
         {
             //pi_batch_agg.data
             let proof_path = path.join("proof_batch_agg.data");
@@ -153,7 +200,6 @@ async fn query_proof(batch_index: String) -> ProveResult {
             result.proof_data = proof_data;
 
             let pi_path = path.join("pi_batch_agg.data");
-            // let mut pi_data = String::new();
             let mut pi_data = Vec::new();
 
             match fs::File::open(pi_path) {
@@ -169,6 +215,7 @@ async fn query_proof(batch_index: String) -> ProveResult {
             break;
         }
     }
+
     return result;
 }
 
