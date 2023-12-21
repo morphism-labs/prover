@@ -132,11 +132,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    log::info!("challenger = {:#?}", challenges.1);
-    log::info!("Address::default = {:#?}", Address::default());
 
     if challenges.1 != Address::default() {
-        log::info!("already has challenge, batch index = {:#?}", batch_index);
+        log::info!("already challenge, batch index = {:#?}", batch_index);
         return Ok(());
     }
 

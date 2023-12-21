@@ -121,7 +121,6 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                     task_status::PROVED => {
                         log::info!("proof already generated");
                         prove_state(batch_index, &l1_rollup, &l1_provider).await;
-                        std::thread::sleep(Duration::from_secs(60)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
                         continue;
                     }
                     _ => {
@@ -145,7 +144,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
     loop {
-        std::thread::sleep(Duration::from_secs(300));
+        std::thread::sleep(Duration::from_secs(30));
         let prove_result = match query_proof(batch_index).await {
             Some(pr) => pr,
             None => continue,

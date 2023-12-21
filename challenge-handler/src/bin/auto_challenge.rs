@@ -12,7 +12,7 @@ use std::time::Duration;
 type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
 /**
- * Search for the latest batch to challenge
+ * Automatically challenge the latest batch.
  */
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
@@ -225,6 +225,7 @@ async fn detecte_challenge(latest: U64, l1_rollup: &RollupType, l1_provider: &Pr
         };
 
         if batch_in_challenge {
+            log::warn!("prev challenge not finalized, batch index = {:#?}", batch_index);
             return Some(true);
         }
         log::info!("batch status not in challenge, batch index = {:#?}", batch_index);
