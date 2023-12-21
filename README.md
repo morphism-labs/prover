@@ -1,2 +1,2 @@
 # prover
-Morphism prover
+Morph prover
