@@ -1,6 +1,6 @@
 build:
-	cargo build --release
-	cd challenge-handler&&cargo build --release
+	cargo build
+	cd challenge-handler&&cargo build
 
 run:build
 	./start.sh
