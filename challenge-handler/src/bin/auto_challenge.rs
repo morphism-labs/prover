@@ -17,6 +17,7 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
     // Prepare env.
+    log::info!("starting auto-challenge...");
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     dotenv().ok();
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
@@ -26,13 +27,6 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Cannot detect INTERVAL env var")
         .parse()
         .expect("Cannot parse INTERVAL env var");
-
-    let challenge: bool = var("CHALLENGE")
-        .expect("Cannot detect CHALLENGE env var")
-        .parse()
-        .expect("Cannot parse CHALLENGE env var");
-    log::info!("starting... challenge = {:#?}", challenge);
-
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_signer = Arc::new(SignerMiddleware::new(
         l1_provider.clone(),
@@ -51,14 +45,14 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    log::info!("address({:#?})  is_challenger: {:#?}", challenger_address, is_challenger);
+    log::info!("address({:#?})  is_challenger: {:#?}", challenger_address.to_string(), is_challenger);
 
     let challenger_balance = l1_provider.get_balance(challenger_address, None).await.unwrap();
-    log::info!("challenger_eth_balance: {:#?}", challenger_balance);
+    log::info!("challenger_eth_balance: {:#?}", ethers::utils::format_ether(challenger_balance));
 
     let finalization_period = l1_rollup.finalization_period_seconds().await?;
     let proof_window = l1_rollup.proof_window().await?;
-    log::info!("finalization_period: ({:#?})  proof_window: {:#?}", finalization_period, proof_window);
+    log::info!("finalization_period: {:#?}  proof_window: {:#?}", finalization_period, proof_window);
 
     loop {
         let _ = auto_challenge(&l1_provider, &l1_rollup).await;
@@ -67,7 +61,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) -> Result<(), Box<dyn Error>> {
-    // Search for the latest batch
+    // Search for the latest batch.
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
         Err(e) => {
@@ -76,10 +70,12 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
         }
     };
 
-    // Check prev challenge
+    // Check layer2 state.
+    verify_state_transition().await;
+
+    // Check prev challenge.
     match detecte_challenge(latest, &l1_rollup, &l1_provider).await {
         Some(true) => {
-            log::warn!("prev challenge not finalized");
             return Ok(());
         }
         Some(false) => (),
@@ -119,7 +115,7 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
     };
     log::info!("latest batch index = {:#?}", batch_index);
 
-    // Challenge state
+    // Challenge state.
     let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(batch_index)).await?;
     if is_batch_finalized {
         log::info!("is_batch_finalized = true, No need for challenge, batch index = {:#?}", batch_index);
@@ -133,11 +129,9 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
             return Ok(());
         }
     };
-    log::info!("challenger = {:#?}", challenges.1);
-    log::info!("Address::default = {:#?}", Address::default());
 
     if challenges.1 != Address::default() {
-        log::info!("already has challenge, batch index = {:#?}", batch_index);
+        log::info!("already challenge, batch index = {:#?}", batch_index);
         return Ok(());
     }
 
@@ -173,7 +167,7 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
                 };
                 return true;
             }
-            // Maybe still pending
+            // Maybe still pending.
             None => {
                 log::info!("challenge_state receipt pending");
                 return false;
@@ -232,6 +226,11 @@ async fn detecte_challenge(latest: U64, l1_rollup: &RollupType, l1_provider: &Pr
     }
     log::info!("all batch's status not in challenge now");
     Some(false)
+}
+
+// Check layer2 state.
+async fn verify_state_transition() {
+    // Do nothing
 }
 
 #[tokio::test]

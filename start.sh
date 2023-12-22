@@ -1,7 +1,13 @@
-# RUST_LOG=trace RUST_BACKTRACE=full nohup ./target/release/prover_server >out.log 2>&1 &
+#!/bin/bash
+
 pkill -9 prover_server
 pkill -9 challenge
 
+# Start prover
 RUST_BACKTRACE=full nohup ./target/release/prover_server >prover.log 2>&1 &
+
 cd ./challenge-handler
+# Start handler
 RUST_LOG=debug RUST_BACKTRACE=full nohup ./target/release/challenge-handler >handler.log 2>&1 &
+# Start challenger
+RUST_LOG=debug RUST_BACKTRACE=full nohup ./target/release/auto_challenge >challenge.log 2>&1 &
