@@ -116,7 +116,9 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    challenge_batch = challenge_batch.max(batch_index);
+    if challenge_batch == 0 {
+        challenge_batch = batch_index;
+    }
 
     // Challenge state
     let is_batch_finalized = l1_rollup.is_batch_finalized(U256::from(challenge_batch)).await?;
