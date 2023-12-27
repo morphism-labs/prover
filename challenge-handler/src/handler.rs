@@ -363,6 +363,9 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
         log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", hash);
         return None;
     };
+    let min_gas_limit = param.min_gas_limit;
+    log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
+
     let chunks: Vec<Bytes> = param.batch_data.chunks;
     return decode_chunks(chunks);
 }
