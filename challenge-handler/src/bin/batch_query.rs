@@ -1,10 +1,13 @@
-use challenge_handler::abi::rollup_abi::Rollup;
+use challenge_handler::abi::rollup_abi::{CommitBatchCall, Rollup};
 use dotenv::dotenv;
 use env_logger::Env;
 use ethers::prelude::*;
 use ethers::signers::Wallet;
+use ethers::{abi::AbiDecode, prelude::*};
+use serde::{Deserialize, Serialize};
 use std::env::var;
 use std::error::Error;
+use std::ops::Mul;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -25,6 +28,11 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Cannot detect CHALLENGE env var")
         .parse()
         .expect("Cannot parse CHALLENGE env var");
+    let  target_block: u64 = var("TARGET_BLOCK")
+        .expect("Cannot detect TARGET_BLOCK env var")
+        .parse()
+        .expect("Cannot parse CHALLENGE_BATCH_INDEX env var");
+
     log::info!("starting... challenge = {:#?}", challenge);
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
@@ -64,8 +72,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     log::info!("latest blocknum = {:#?}", latest);
-    let start = if latest > U64::from(1000) {
-        latest - U64::from(1000)
+    let start = if latest > U64::from(100) {
+        latest - U64::from(100)
     } else {
         U64::from(1)
     };
@@ -84,45 +92,95 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
-    let batch_index = match logs.last() {
-        Some(log) => log.topics[1].to_low_u64_be(),
-        None => {
-            log::error!("find commit_batch log error");
-            return Ok(());
-        }
-    };
-    log::info!("latest batch index = {:#?}", batch_index);
+    // let batch_index = match logs.last() {
+    //     Some(log) => log.topics[1].to_low_u64_be(),
+    //     None => {
+    //         log::error!("find commit_batch log error");
+    //         return Ok(());
+    //     }
+    // };
+    // log::info!("latest batch index = {:#?}", batch_index);
 
     // challenge_batch = challenge_batch.max(batch_index);
 
-    let filter = l1_rollup
-        .commit_batch_filter()
-        .filter
-        .from_block(start)
-        .topic1(U256::from(batch_index))
-        .address(l1_rollup.address());
-    let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
-        Ok(logs) => logs,
-        Err(e) => {
-            log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
-            vec![]
-        }
-    };
+    // let filter = l1_rollup
+    //     .commit_batch_filter()
+    //     .filter
+    //     .from_block(start)
+    //     .topic1(U256::from(batch_index))
+    //     .address(l1_rollup.address());
+    // let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
+    //     Ok(logs) => logs,
+    //     Err(e) => {
+    //         log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
+    //         vec![]
+    //     }
+    // };
 
-    if logs.is_empty() {
-        log::error!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
-        return Ok(());
-    }
+    // if logs.is_empty() {
+    //     log::error!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
+    //     return Ok(());
+    // }
 
     for log in logs {
-        if log.topics[1].to_low_u64_be() != batch_index {
-            log::error!("commit_batch batch_index missing: {:?}", batch_index);
-            continue;
-        }
         let tx_hash = log.transaction_hash.unwrap();
+        let batch_index = log.topics[1].to_low_u64_be();
         let result = l1_provider.get_transaction(tx_hash).await.unwrap().unwrap();
         let data = result.input;
-        log::info!("batch inspect: tx.input =  {:#?}", data);
+
+        // log::info!("batch inspect: tx.input =  {:#?}", data);
+        if data.is_empty() {
+            log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", tx_hash);
+            return Ok(());
+        }
+        let param = if let Ok(_param) = CommitBatchCall::decode(&data) {
+            _param
+        } else {
+            log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", tx_hash);
+            return Ok(());
+        };
+        // let min_gas_limit = param.min_gas_limit;
+        // log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
+
+        let chunks: Vec<Bytes> = param.batch_data.chunks;
+
+        let chunk_with_blocks = decode_chunks(chunks).unwrap_or_default();
+        log::info!("batch_index: {:#?},  decode_chunks_blocknum: {:#?}", batch_index, chunk_with_blocks);
+        if chunk_with_blocks.is_empty() {
+            continue;
+        }
+
+        for chunk in chunk_with_blocks {
+            if chunk.contains(&target_block) {
+                log::info!("===========batch_index: {:#?} contains the block:  {:#?} ", batch_index, target_block);
+            }
+        }
     }
     Ok(())
+}
+
+fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
+    if chunks.is_empty() {
+        return None;
+    }
+
+    let mut chunk_with_blocks: Vec<Vec<u64>> = vec![];
+    for chunk in chunks.iter() {
+        let mut chunk_bn: Vec<u64> = vec![];
+        let bs: &[u8] = chunk;
+
+        // decode blocks from chunk
+        // |   1 byte   | 60 bytes | ... | 60 bytes |
+        // | num blocks |  block 1 | ... |  block n |
+        let num_blocks = U256::from_big_endian(bs.get(..1)?);
+        for i in 0..num_blocks.as_usize() {
+            let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8))?);
+            chunk_bn.push(block_num.as_u64());
+        }
+
+        chunk_with_blocks.push(chunk_bn);
+    }
+
+    // log::debug!("decode_chunks_blocknum: {:#?}", chunk_with_blocks);
+    return Some(chunk_with_blocks);
 }
