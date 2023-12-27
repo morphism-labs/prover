@@ -1,2 +1,3 @@
-# RUST_LOG=trace RUST_BACKTRACE=full nohup ./target/release/prover_server >out.log 2>&1 &
-RUST_LOG=debug RUST_BACKTRACE=full nohup ./target/release/challenge-handler >challenge.log 2>&1 &
+#!/bin/bash
+
+RUST_LOG=debug RUST_BACKTRACE=full nohup ./target/release/challenge-handler >handler.log 2>&1 &
