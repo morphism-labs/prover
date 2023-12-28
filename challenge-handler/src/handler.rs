@@ -313,6 +313,8 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
     }
+
+    //TODO sort by batch index
     //asc
     // logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
 

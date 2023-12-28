@@ -28,7 +28,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Cannot detect CHALLENGE env var")
         .parse()
         .expect("Cannot parse CHALLENGE env var");
-    let  target_block: u64 = var("TARGET_BLOCK")
+    let target_block: u64 = var("TARGET_BLOCK")
         .expect("Cannot detect TARGET_BLOCK env var")
         .parse()
         .expect("Cannot parse CHALLENGE_BATCH_INDEX env var");
@@ -78,7 +78,12 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         U64::from(1)
     };
 
-    let filter = l1_rollup.commit_batch_filter().filter.from_block(start).address(l1_rollup.address());
+    let filter = l1_rollup
+        .commit_batch_filter()
+        .filter
+        .from_block(1)
+        .to_block(2000)
+        .address(l1_rollup.address());
     let mut logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
@@ -122,7 +127,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     //     return Ok(());
     // }
 
-    for log in logs {
+    'task: for log in logs {
         let tx_hash = log.transaction_hash.unwrap();
         let batch_index = log.topics[1].to_low_u64_be();
         let result = l1_provider.get_transaction(tx_hash).await.unwrap().unwrap();
@@ -145,14 +150,15 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         let chunks: Vec<Bytes> = param.batch_data.chunks;
 
         let chunk_with_blocks = decode_chunks(chunks).unwrap_or_default();
-        log::info!("batch_index: {:#?},  decode_chunks_blocknum: {:#?}", batch_index, chunk_with_blocks);
         if chunk_with_blocks.is_empty() {
             continue;
         }
 
-        for chunk in chunk_with_blocks {
+        for chunk in chunk_with_blocks.clone() {
             if chunk.contains(&target_block) {
                 log::info!("===========batch_index: {:#?} contains the block:  {:#?} ", batch_index, target_block);
+                log::info!("batch_index: {:#?},  decode_chunks_blocknum: {:#?}", batch_index, chunk_with_blocks);
+                break 'task;
             }
         }
     }
