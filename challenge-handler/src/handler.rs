@@ -79,14 +79,14 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             None => continue,
         };
         log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
-        match query_proof(batch_index).await {
-            Some(_) => {
-                log::info!("query proof and prove state: {:#?}", batch_index);
-                prove_state(batch_index, &l1_rollup, &l1_provider).await;
-                continue;
-            }
-            None => (),
-        }
+        // match query_proof(batch_index).await {
+        //     Some(_) => {
+        //         log::info!("query proof and prove state: {:#?}", batch_index);
+        //         prove_state(batch_index, &l1_rollup, &l1_provider).await;
+        //         continue;
+        //     }
+        //     None => (),
+        // }
 
         // Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
         let hash = match query_challenged_batch(latest, &l1_rollup, batch_index, &l1_provider).await {
