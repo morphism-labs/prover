@@ -79,14 +79,14 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             None => continue,
         };
         log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
-        // match query_proof(batch_index).await {
-        //     Some(_) => {
-        //         log::info!("query proof and prove state: {:#?}", batch_index);
-        //         prove_state(batch_index, &l1_rollup, &l1_provider).await;
-        //         continue;
-        //     }
-        //     None => (),
-        // }
+        match query_proof(batch_index).await {
+            Some(_) => {
+                log::info!("query proof and prove state: {:#?}", batch_index);
+                prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                continue;
+            }
+            None => (),
+        }
 
         // Step3. query challenged batch for the past 3 days(7200blocks*3 = 3 day).
         let hash = match query_challenged_batch(latest, &l1_rollup, batch_index, &l1_provider).await {
@@ -318,10 +318,10 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
 
     //TODO sort by batch index
     //asc
-    // logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
+    logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
 
     //desc
-    logs.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
+    // logs.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
     for log in logs {
         let batch_index: u64 = log.topics[1].to_low_u64_be();

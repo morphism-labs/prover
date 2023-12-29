@@ -69,17 +69,17 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Check prev challenge
-    // match detecte_challenge(latest, &l1_rollup, &l1_provider).await {
-    //     Some(true) => {
-    //         log::warn!("prev challenge not finalized");
-    //         return Ok(());
-    //     }
-    //     Some(false) => (),
-    //     None => {
-    //         log::warn!("prev challenge unknown");
-    //         return Ok(());
-    //     }
-    // }
+    match detecte_challenge(latest, &l1_rollup, &l1_provider).await {
+        Some(true) => {
+            log::warn!("prev challenge not finalized");
+            return Ok(());
+        }
+        Some(false) => (),
+        None => {
+            log::warn!("prev challenge unknown");
+            return Ok(());
+        }
+    }
 
     log::info!("latest blocknum = {:#?}", latest);
     let start = if latest > U64::from(200) {
