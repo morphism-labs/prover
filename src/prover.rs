@@ -36,7 +36,6 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
     'task: loop {
         thread::sleep(Duration::from_millis(4000));
-        log::info!("starting take request");
 
         // Step1. pop request from queue
         let prove_request: ProveRequest = match prove_queue.lock().await.pop() {

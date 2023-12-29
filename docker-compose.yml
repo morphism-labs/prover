@@ -1,0 +1,41 @@
+version: '3.4'
+
+services:
+  prover:
+    build:
+      dockerfile: ./Dockerfile.prover
+    image: prover:latest
+    restart: unless-stopped
+    # ports:
+    #   - "6060:6060"
+    command: >
+      ./prover_server
+    environment:
+      - L1_RPC=${L1_RPC}
+      - L2_RPC=${L2_RPC}
+      - COINBASE="0x0000000000000000000000000000000000000000"
+      - SCROLL_PROVER_ASSETS_DIR=./configs
+      - GENERATE_EVM_VERIFIER=false
+    volumes:
+      - ./configs:/configs
+      - ./prove_params:/prove_params
+      - ./proof:/proof
+  
+  challenger-handler:
+    depends_on:
+        prover:
+          condition: service_started
+    build:
+      dockerfile: ./Dockerfile.handler
+    image: challenger-handler:latest
+    restart: unless-stopped
+    ports:
+      - "6071:6060"
+    command: >
+      ./challenge-handler
+    environment:
+      - L1_RPC=${L1_RPC}
+      - L2_RPC=${L2_RPC}
+      - PROVER_RPC=prover:3030
+      - L1_ROLLUP=${L1_ROLLUP}
+      - L1_ROLLUP_PRIVATE_KEY=${L1_ROLLUP_PRIVATE_KEY}

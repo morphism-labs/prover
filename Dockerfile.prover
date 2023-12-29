@@ -1,0 +1,24 @@
+ARG GO_VERSION=1.20
+
+FROM rust:1.70 as builder
+# FROM scrolltech/go-rust-builder:go-1.20-rust-nightly-2022-12-10 as builder
+
+ARG GO_VERSION
+RUN rm -rf /usr/local/go
+RUN wget https://go.dev/dl/go${GO_VERSION}.1.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go${GO_VERSION}.1.linux-amd64.tar.gz
+RUN rm go${GO_VERSION}.1.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+COPY . /prover
+
+WORKDIR /prover
+RUN cargo build --release
+RUN cp `find ./target/release/ | grep libzktrie.so` /
+
+FROM ubuntu:22.04 as app
+COPY --from=builder /prover/target/release/prover_server /
+COPY --from=builder /libzktrie.so /usr/local/lib/
+RUN echo "/usr/local/lib" >> /etc/ld.so.conf && ldconfig -v
+
+CMD ["./prover_server"]
