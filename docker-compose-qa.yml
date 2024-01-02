@@ -21,13 +21,13 @@ services:
       - ./prove_params:/prove_params
       - ./proof:/proof
   
-  challenger-handler:
+  challenge-handler:
     depends_on:
         prover:
           condition: service_started
     build:
       dockerfile: ./Dockerfile.handler
-    image: challenger-handler:latest
+    image: challenge-handler:latest
     restart: unless-stopped
     # ports:
     #   - "6071:6060"
@@ -39,3 +39,20 @@ services:
       - PROVER_RPC=prover:3030
       - L1_ROLLUP=${L1_ROLLUP}
       - L1_ROLLUP_PRIVATE_KEY=${L1_ROLLUP_PRIVATE_KEY}
+
+  # Only used in test scene.
+  challenger:
+    depends_on:
+        challenge-handler:
+          condition: service_started
+    build:
+      dockerfile: ./Dockerfile.challenger
+    image: challenger:latest
+    restart: unless-stopped
+    command: >
+      ./auto_challenge
+    environment:
+      - INTERVAL=12
+      - L1_RPC=${L1_RPC}
+      - L1_ROLLUP=${L1_ROLLUP}
+      - CHALLENGER_PRIVATEKEY=${CHALLENGER_PRIVATEKEY}
