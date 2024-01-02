@@ -1,4 +1,4 @@
-FROM rust:1.70 as builder
+FROM rust:1.70.0-alpine as builder
 # FROM scrolltech/go-rust-builder:go-1.20-rust-nightly-2022-12-10 as builder
 
 COPY --from=golang:1.20-alpine /usr/local/go/ /usr/local/go/
@@ -7,6 +7,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 COPY . /prover
 
 WORKDIR /prover
+
 RUN cargo build --release
 RUN cp `find ./target/release/ | grep libzktrie.so` /
 
