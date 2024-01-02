@@ -24,12 +24,16 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let private_key = var("CHALLENGER_PRIVATEKEY").expect("Cannot detect CHALLENGER_PRIVATEKEY env var");
-
-    let target_batch: u64 = var("TARGET_BATCH")
-        .expect("Cannot detect TARGET_BATCH env var")
+    let challenge: bool = var("CHALLENGE")
+        .expect("Cannot detect CHALLENGE env var")
         .parse()
-        .expect("Cannot parse TARGET_BATCH env var");
+        .expect("Cannot parse CHALLENGE env var");
+    let target_block: u64 = var("TARGET_BLOCK")
+        .expect("Cannot detect TARGET_BLOCK env var")
+        .parse()
+        .expect("Cannot parse CHALLENGE_BATCH_INDEX env var");
 
+    log::info!("starting... challenge = {:#?}", challenge);
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_signer = Arc::new(SignerMiddleware::new(
@@ -77,49 +81,87 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let filter = l1_rollup
         .commit_batch_filter()
         .filter
-        .from_block(start)
-        .topic1(U256::from(target_batch))
+        .from_block(1)
+        .to_block(2000)
         .address(l1_rollup.address());
-    let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
+    let mut logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
         Ok(logs) => logs,
         Err(e) => {
             log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
-            vec![]
+            return Ok(());
         }
     };
 
     if logs.is_empty() {
-        log::error!("no commit_batch log of {:?}, commit_batch logs is empty", target_batch);
+        log::error!("There have been no commit_batch logs for the last 1000 blocks.");
         return Ok(());
     }
+    logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
+    // let batch_index = match logs.last() {
+    //     Some(log) => log.topics[1].to_low_u64_be(),
+    //     None => {
+    //         log::error!("find commit_batch log error");
+    //         return Ok(());
+    //     }
+    // };
+    // log::info!("latest batch index = {:#?}", batch_index);
 
-    assert!(logs.len() == 1, "logs.len() should equals 1");
+    // challenge_batch = challenge_batch.max(batch_index);
 
-    let log = logs.first().unwrap();
-    let tx_hash = log.transaction_hash.unwrap();
-    let batch_index = log.topics[1].to_low_u64_be();
-    let result = l1_provider.get_transaction(tx_hash).await.unwrap().unwrap();
-    let data = result.input;
+    // let filter = l1_rollup
+    //     .commit_batch_filter()
+    //     .filter
+    //     .from_block(start)
+    //     .topic1(U256::from(batch_index))
+    //     .address(l1_rollup.address());
+    // let logs: Vec<Log> = match l1_provider.get_logs(&filter).await {
+    //     Ok(logs) => logs,
+    //     Err(e) => {
+    //         log::error!("l1_rollup.commit_batch.get_logs error: {:#?}", e);
+    //         vec![]
+    //     }
+    // };
 
-    // log::info!("batch inspect: tx.input =  {:#?}", data);
-    if data.is_empty() {
-        log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", tx_hash);
-        return Ok(());
+    // if logs.is_empty() {
+    //     log::error!("no commit_batch log of {:?}, commit_batch logs is empty", batch_index);
+    //     return Ok(());
+    // }
+
+    'task: for log in logs {
+        let tx_hash = log.transaction_hash.unwrap();
+        let batch_index = log.topics[1].to_low_u64_be();
+        let result = l1_provider.get_transaction(tx_hash).await.unwrap().unwrap();
+        let data = result.input;
+
+        // log::info!("batch inspect: tx.input =  {:#?}", data);
+        if data.is_empty() {
+            log::warn!("batch inspect: tx.input is empty, tx_hash =  {:#?}", tx_hash);
+            return Ok(());
+        }
+        let param = if let Ok(_param) = CommitBatchCall::decode(&data) {
+            _param
+        } else {
+            log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", tx_hash);
+            return Ok(());
+        };
+        // let min_gas_limit = param.min_gas_limit;
+        // log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
+
+        let chunks: Vec<Bytes> = param.batch_data.chunks;
+
+        let chunk_with_blocks = decode_chunks(chunks).unwrap_or_default();
+        if chunk_with_blocks.is_empty() {
+            continue;
+        }
+
+        for chunk in chunk_with_blocks.clone() {
+            if chunk.contains(&target_block) {
+                log::info!("===========batch_index: {:#?} contains the block:  {:#?} ", batch_index, target_block);
+                log::info!("batch_index: {:#?},  decode_chunks_blocknum: {:#?}", batch_index, chunk_with_blocks);
+                break 'task;
+            }
+        }
     }
-    let param = if let Ok(_param) = CommitBatchCall::decode(&data) {
-        _param
-    } else {
-        log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", tx_hash);
-        return Ok(());
-    };
-    // let min_gas_limit = param.min_gas_limit;
-    // log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
-
-    let chunks: Vec<Bytes> = param.batch_data.chunks;
-
-    let chunk_with_blocks = decode_chunks(chunks).unwrap_or_default();
-    log::info!("batch_index: {:#?},  decode_chunks_blocknum: {:#?}", batch_index, chunk_with_blocks);
-
     Ok(())
 }
 
