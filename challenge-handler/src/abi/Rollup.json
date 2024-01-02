@@ -5,6 +5,11 @@
         "internalType": "uint64",
         "name": "_chainId",
         "type": "uint64"
+      },
+      {
+        "internalType": "address payable",
+        "name": "_messenger",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -297,6 +302,19 @@
   },
   {
     "inputs": [],
+    "name": "MESSENGER",
+    "outputs": [
+      {
+        "internalType": "contract CrossDomainMessenger",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "MIN_DEPOSIT",
     "outputs": [
       {
@@ -358,6 +376,25 @@
     "name": "addSequencer",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "batchIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "batchExist",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -515,11 +552,16 @@
         "internalType": "struct IRollup.BatchData",
         "name": "batchData",
         "type": "tuple"
+      },
+      {
+        "internalType": "uint32",
+        "name": "minGasLimit",
+        "type": "uint32"
       }
     ],
     "name": "commitBatch",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -630,8 +672,34 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_batchIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "finalizeBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "finalizeBatchs",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "num",
+        "type": "uint256"
+      }
+    ],
+    "name": "finalizeBatchsByNum",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

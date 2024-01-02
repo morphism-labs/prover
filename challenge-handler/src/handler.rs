@@ -244,7 +244,9 @@ async fn query_proof(batch_index: u64) -> Option<ProveResult> {
 async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        latest - U64::from(7200 * 3)
+        // latest - U64::from(7200 * 3)
+        U64::from(1)
+
     } else {
         U64::from(1)
     };
@@ -313,7 +315,13 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
     }
+
+    //TODO sort by batch index
+    //asc
     logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
+
+    //desc
+    // logs.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
     for log in logs {
         let batch_index: u64 = log.topics[1].to_low_u64_be();
@@ -363,6 +371,9 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
         log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", hash);
         return None;
     };
+    let min_gas_limit = param.min_gas_limit;
+    log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
+
     let chunks: Vec<Bytes> = param.batch_data.chunks;
     return decode_chunks(chunks);
 }
