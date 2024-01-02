@@ -29,8 +29,8 @@ services:
       dockerfile: ./Dockerfile.handler
     image: challenger-handler:latest
     restart: unless-stopped
-    ports:
-      - "6071:6060"
+    # ports:
+    #   - "6071:6060"
     command: >
       ./challenge-handler
     environment:
