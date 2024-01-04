@@ -36,9 +36,10 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
     'task: loop {
         thread::sleep(Duration::from_millis(4000));
+        let mut queue_lock = prove_queue.lock().await;
 
         // Step1. pop request from queue
-        let prove_request: ProveRequest = match prove_queue.lock().await.pop() {
+        let prove_request: &ProveRequest = match queue_lock.first() {
             Some(req) => {
                 log::info!(
                     "received prove request, batch index = {:#?}, chunks len = {:#?}",
@@ -94,6 +95,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                     Ok(proof) => proof,
                     Err(e) => {
                         log::error!("chunk prove err: {:#?}", e);
+                        queue_lock.pop();
                         continue 'task;
                     }
                 };
@@ -118,8 +120,12 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                     generate_evm_verifier(batch_prover, proof);
                 }
             }
-            Err(e) => log::error!("batch prove err: {:#?}", e),
+            Err(e) => {
+                log::error!("batch prove err: {:#?}", e);
+                queue_lock.pop();
+            }
         }
+        queue_lock.pop();
     }
 }
 

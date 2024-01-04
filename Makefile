@@ -4,5 +4,8 @@ build:
 	echo "/usr/local/lib" >> /etc/ld.so.conf && ldconfig -v
 	cd challenge-handler&&cargo build --release
 
+clean:
+	rm -fr target
+
 run:build
 	./start.sh

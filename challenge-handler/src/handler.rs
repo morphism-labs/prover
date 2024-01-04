@@ -1,4 +1,5 @@
 use crate::abi::rollup_abi::{CommitBatchCall, Rollup};
+use crate::metrics::METRICS;
 use crate::util;
 use dotenv::dotenv;
 use ethers::providers::{Http, Provider};
@@ -79,6 +80,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             None => continue,
         };
         log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
+        METRICS.detected_batch_index.set(batch_index as i64);
         match query_proof(batch_index).await {
             Some(_) => {
                 log::info!("query proof and prove state: {:#?}", batch_index);
@@ -97,6 +99,23 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             Some(batch) => batch,
             None => continue,
         };
+        METRICS.chunks_len.set(batch_info.len() as i64);
+
+        let status = tokio::task::spawn_blocking(move || util::call_prover(String::default(), "/query_status"))
+            .await
+            .unwrap();
+
+        match status {
+            Some(info) => match info.as_str() {
+                "0" => METRICS.prover_status.set(1), // idle
+                "1" => METRICS.prover_status.set(2), // working
+                _ => METRICS.prover_status.set(0),   // unknown
+            },
+            None => {
+                METRICS.prover_status.set(0); // unknown
+                log::error!("prover status unknown");
+            }
+        }
 
         // Step4. Make a call to the Prove server.
         let request = ProveRequest {
@@ -246,7 +265,6 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
         // Depends on challenge period
         // latest - U64::from(7200 * 3)
         U64::from(1)
-
     } else {
         U64::from(1)
     };
