@@ -8,6 +8,8 @@ use prover::zkevm::Prover as ChunkProver;
 use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
 use serde::{Deserialize, Serialize};
 use std::env::var;
+use std::fs::File;
+use std::io::Write;
 use std::time::Duration;
 use std::{env, fs};
 use std::{sync::Arc, thread};
@@ -97,6 +99,11 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                         continue 'task;
                     }
                 };
+
+            //save chunk.protocol
+            let protocol = &chunk_proof.protocol;
+            let mut params_file = File::create("configs/chunk.protocol").unwrap();
+            params_file.write_all(&protocol[..]).unwrap();
 
             chunk_proofs.push((chunk_hash, chunk_proof));
         }
