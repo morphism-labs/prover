@@ -40,7 +40,7 @@ services:
       - HANDLER_L2_RPC=${L2_RPC}
       - HANDLER_PROVER_RPC=prover:3030
       - HANDLER_L1_ROLLUP=${L1_ROLLUP}
-      - HANDLER_L1_ROLLUP_PRIVATE_KEY=${L1_ROLLUP_PRIVATE_KEY}
+      - CHALLENGE_HANDLER_PRIVATE_KEY=${HANDLER_PRIVATE_KEY}
 
   # Only used in test scene.
   challenger:
