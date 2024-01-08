@@ -105,7 +105,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
             //save chunk.protocol
             let protocol = &chunk_proof.protocol;
-            let mut params_file = File::create("configs/chunk.protocol").unwrap();
+            let mut params_file = File::create(fs_assets.clone() + "/chunk.protocol").unwrap();
             params_file.write_all(&protocol[..]).unwrap();
 
             chunk_proofs.push((chunk_hash, chunk_proof));

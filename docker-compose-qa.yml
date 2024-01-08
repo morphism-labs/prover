@@ -16,12 +16,12 @@ services:
       - PROVER_PARAMS=${PARAMS}
       - PROVER_PROOF=${PROOF}
       - COINBASE="0xfabb0ac9d68b0b445fb7357272ff202c5651694a"
-      - SCROLL_PROVER_ASSETS_DIR=${CONFIG}
+      - SCROLL_PROVER_ASSETS_DIR=${CONFIGS}
       - GENERATE_EVM_VERIFIER=false
     volumes:
-      - ./configs:${CONFIG}
-      - ./prover_params:${PROVER_PARAMS}
-      - ./prover_proof:${PROVER_PROOF}
+      - ./configs:${CONFIGS}
+      - ./prove_params:${PARAMS}
+      - ./proof:${PROOF}
 
   challenge-handler:
     depends_on:
