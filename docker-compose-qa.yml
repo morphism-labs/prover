@@ -13,18 +13,20 @@ services:
     environment:
       - PROVER_L1_RPC=${L1_RPC}
       - PROVER_L2_RPC=${L2_RPC}
+      - PROVER_PARAMS=${PARAMS}
+      - PROVER_PROOF=${PROOF}
       - COINBASE="0xfabb0ac9d68b0b445fb7357272ff202c5651694a"
-      - SCROLL_PROVER_ASSETS_DIR=./configs
+      - SCROLL_PROVER_ASSETS_DIR=${CONFIG}
       - GENERATE_EVM_VERIFIER=false
     volumes:
-      - ./configs:/configs
-      - ./prove_params:/prove_params
-      - ./proof:/proof
-  
+      - ./configs:${CONFIG}
+      - ./prover_params:${PROVER_PARAMS}
+      - ./prover_proof:${PROVER_PROOF}
+
   challenge-handler:
     depends_on:
-        prover:
-          condition: service_started
+      prover:
+        condition: service_started
     build:
       dockerfile: ./Dockerfile.handler
     image: challenge-handler:latest
@@ -43,8 +45,8 @@ services:
   # Only used in test scene.
   challenger:
     depends_on:
-        challenge-handler:
-          condition: service_started
+      challenge-handler:
+        condition: service_started
     build:
       dockerfile: ./Dockerfile.challenger
     image: challenger:latest

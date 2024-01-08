@@ -1,4 +1,4 @@
-use crate::utils::{get_block_traces_by_number, FS_PROOF, FS_PROVE_PARAMS};
+use crate::utils::get_block_traces_by_number;
 use dotenv::dotenv;
 use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
@@ -31,12 +31,14 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         .expect("GENERATE_EVM_VERIFIER env var")
         .parse()
         .expect("Cannot parse GENERATE_EVM_VERIFIER env var");
+    let prover_params = var("PROVER_PARAMS").expect("PROVER_PARAMS env var");
+    let prover_proof = var("PROVER_PROOF").expect("PROVER_PROOF env var");
 
     let fs_assets = var("SCROLL_PROVER_ASSETS_DIR").expect("SCROLL_PROVER_ASSETS_DIR env var");
     // env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
 
-    let mut chunk_prover = ChunkProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
+    let mut chunk_prover = ChunkProver::from_dirs(prover_params.as_str(), fs_assets.as_str());
     'task: loop {
         thread::sleep(Duration::from_millis(4000));
 
@@ -72,7 +74,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             continue;
         }
 
-        let proof_path = FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
+        let proof_path = prover_proof.clone() + format!("/batch_{}", &prove_request.batch_index).as_str();
         fs::create_dir_all(proof_path.clone()).unwrap();
 
         // Step3. start chunk prove
@@ -116,7 +118,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
         // Step4. start batch prove
         log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
-        let mut batch_prover = BatchProver::from_dirs(FS_PROVE_PARAMS, fs_assets.as_str());
+        let mut batch_prover = BatchProver::from_dirs(prover_params.as_str(), fs_assets.as_str());
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
