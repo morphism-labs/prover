@@ -11,8 +11,8 @@ services:
     command: >
       ./prover_server
     environment:
-      - L1_RPC=${L1_RPC}
-      - L2_RPC=${L2_RPC}
+      - PROVER_L1_RPC=${L1_RPC}
+      - PROVER_L2_RPC=${L2_RPC}
       - COINBASE="0xfabb0ac9d68b0b445fb7357272ff202c5651694a"
       - SCROLL_PROVER_ASSETS_DIR=./configs
       - GENERATE_EVM_VERIFIER=false
@@ -34,11 +34,11 @@ services:
     command: >
       ./challenge-handler
     environment:
-      - L1_RPC=${L1_RPC}
-      - L2_RPC=${L2_RPC}
-      - PROVER_RPC=prover:3030
-      - L1_ROLLUP=${L1_ROLLUP}
-      - L1_ROLLUP_PRIVATE_KEY=${L1_ROLLUP_PRIVATE_KEY}
+      - HANDLER_L1_RPC=${L1_RPC}
+      - HANDLER_L2_RPC=${L2_RPC}
+      - HANDLER_PROVER_RPC=prover:3030
+      - HANDLER_L1_ROLLUP=${L1_ROLLUP}
+      - HANDLER_L1_ROLLUP_PRIVATE_KEY=${L1_ROLLUP_PRIVATE_KEY}
 
   # Only used in test scene.
   challenger:
@@ -52,7 +52,7 @@ services:
     command: >
       ./auto_challenge
     environment:
-      - INTERVAL=12
-      - L1_RPC=${L1_RPC}
-      - L1_ROLLUP=${L1_ROLLUP}
+      - CHALLENGER_INTERVAL=12
+      - CHALLENGER_L1_RPC=${L1_RPC}
+      - CHALLENGER_L1_ROLLUP=${L1_ROLLUP}
       - CHALLENGER_PRIVATEKEY=${CHALLENGER_PRIVATEKEY}

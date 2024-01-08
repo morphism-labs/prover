@@ -26,6 +26,7 @@ pub struct ProveRequest {
 /// Generate AggCircuitProof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     dotenv().ok();
+    let l2_rpc = var("PROVER_L2_RPC").expect("Cannot detect L2_RPC env var");
     let generate_verifier: bool = var("GENERATE_EVM_VERIFIER")
         .expect("GENERATE_EVM_VERIFIER env var")
         .parse()
@@ -56,7 +57,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         };
 
         // Step2. fetch trace
-        let provider = match Provider::try_from(&prove_request.rpc) {
+        let provider = match Provider::try_from(&l2_rpc) {
             Ok(provider) => provider,
             Err(e) => {
                 log::error!("Failed to init provider: {:#?}", e);

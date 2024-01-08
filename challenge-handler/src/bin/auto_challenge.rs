@@ -20,10 +20,10 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("starting auto-challenge...");
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     dotenv().ok();
-    let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
-    let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
+    let l1_rpc = var("CHALLENGER_L1_RPC").expect("Cannot detect L1_RPC env var");
+    let l1_rollup_address = var("CHALLENGER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let private_key = var("CHALLENGER_PRIVATEKEY").expect("Cannot detect CHALLENGER_PRIVATEKEY env var");
-    let interval: u64 = var("INTERVAL")
+    let interval: u64 = var("CHALLENGER_INTERVAL")
         .expect("Cannot detect INTERVAL env var")
         .parse()
         .expect("Cannot parse INTERVAL env var");
