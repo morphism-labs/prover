@@ -6,15 +6,16 @@ services:
       dockerfile: ./Dockerfile.prover
     image: prover:latest
     restart: unless-stopped
-    # ports:
-    #   - "6060:6060"
+    ports:
+      - "6060:6060"
+      - "8080:8080"
     command: >
       ./prover_server
     environment:
       - PROVER_L1_RPC=${L1_RPC}
       - PROVER_L2_RPC=${L2_RPC}
-      - PROVER_PARAMS=${PARAMS}
-      - PROVER_PROOF=${PROOF}
+      - PROVER_PARAMS_DIR=${PARAMS}
+      - PROVER_PROOF_DIR=${PROOF}
       - COINBASE="0xfabb0ac9d68b0b445fb7357272ff202c5651694a"
       - SCROLL_PROVER_ASSETS_DIR=${CONFIGS}
       - GENERATE_EVM_VERIFIER=false
@@ -31,14 +32,12 @@ services:
       dockerfile: ./Dockerfile.handler
     image: challenge-handler:latest
     restart: unless-stopped
-    # ports:
-    #   - "6071:6060"
     command: >
       ./challenge-handler
     environment:
       - HANDLER_L1_RPC=${L1_RPC}
       - HANDLER_L2_RPC=${L2_RPC}
-      - HANDLER_PROVER_RPC=prover:3030
+      - HANDLER_PROVER_RPC=prover:8080
       - HANDLER_L1_ROLLUP=${L1_ROLLUP}
       - CHALLENGE_HANDLER_PRIVATE_KEY=${HANDLER_PRIVATE_KEY}
 
