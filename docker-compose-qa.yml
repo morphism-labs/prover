@@ -32,6 +32,8 @@ services:
       dockerfile: ./Dockerfile.handler
     image: challenge-handler:latest
     restart: unless-stopped
+    ports:
+      - "6060:6060"
     command: >
       ./challenge-handler
     environment:
