@@ -31,8 +31,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         .expect("GENERATE_EVM_VERIFIER env var")
         .parse()
         .expect("Cannot parse GENERATE_EVM_VERIFIER env var");
-    let prover_params = var("PROVER_PARAMS").expect("PROVER_PARAMS env var");
-    let prover_proof = var("PROVER_PROOF").expect("PROVER_PROOF env var");
+    let prover_params = var("PROVER_PARAMS_DIR").expect("PROVER_PARAMS env var");
+    let prover_proof = var("PROVER_PROOF_DIR").expect("PROVER_PROOF env var");
 
     let fs_assets = var("SCROLL_PROVER_ASSETS_DIR").expect("SCROLL_PROVER_ASSETS_DIR env var");
     // env::set_var("SCROLL_PROVER_ASSETS_DIR", "./configs");
