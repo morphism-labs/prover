@@ -51,7 +51,7 @@ async fn main() {
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http());
 
-        axum::Server::bind(&"127.0.0.1:8080".parse().unwrap())
+        axum::Server::bind(&"127.0.0.1:3030".parse().unwrap())
             .serve(service.into_make_service())
             .await
             .unwrap();
