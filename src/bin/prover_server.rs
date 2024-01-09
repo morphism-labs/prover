@@ -93,9 +93,9 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     if queue_lock.len() > 0 {
         return String::from("add prove batch fail, please waiting for the pending task to complete");
     }
-    if let Some(value) = check_batch_status(&prove_request).await {
-        return value;
-    }
+    // if let Some(value) = check_batch_status(&prove_request).await {
+    //     return value;
+    // }
     let proof_path = FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
     fs::create_dir_all(proof_path.clone()).unwrap();
     log::info!("add pending req of batch: {:#?}", prove_request.batch_index);
