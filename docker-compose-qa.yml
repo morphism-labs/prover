@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "6060:6060"
-      - "8080:3030"
+      - "3030:3030"
     command: >
       ./prover_server
     environment:
@@ -37,7 +37,7 @@ services:
     environment:
       - HANDLER_L1_RPC=${L1_RPC}
       - HANDLER_L2_RPC=${L2_RPC}
-      - HANDLER_PROVER_RPC=prover:8080
+      - HANDLER_PROVER_RPC=prover:3030
       - HANDLER_L1_ROLLUP=${L1_ROLLUP}
       - CHALLENGE_HANDLER_PRIVATE_KEY=${HANDLER_PRIVATE_KEY}
 
