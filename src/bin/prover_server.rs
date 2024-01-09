@@ -96,9 +96,9 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     if queue_lock.len() > 0 {
         return String::from("add prove batch fail, please waiting for the pending task to complete");
     }
-    if let Some(value) = check_batch_status(&prove_request).await {
-        return value;
-    }
+    // if let Some(value) = check_batch_status(&prove_request).await {
+    //     return value;
+    // }
     
     dotenv().ok();
     let prover_proof = var("PROVER_PROOF_DIR").expect("PROVER_PROOF env var");
