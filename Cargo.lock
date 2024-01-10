@@ -5503,6 +5503,7 @@ dependencies = [
  "ethers",
  "halo2_proofs",
  "log",
+ "once_cell",
  "prover",
  "rand",
  "rand_xorshift",

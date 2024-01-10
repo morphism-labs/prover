@@ -134,7 +134,6 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                     task_status::PROVING => {
                         log::info!("waiting for proof to be generated");
                         std::thread::sleep(Duration::from_secs(600)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
-                        prove_state(batch_index, &l1_rollup, &l1_provider).await;
                         continue;
                     }
                     task_status::PROVED => {
