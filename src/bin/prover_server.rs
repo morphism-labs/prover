@@ -6,12 +6,13 @@ use std::fs;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use dotenv::dotenv;
+use std::env::var;
 
 use tower_http::add_extension::AddExtensionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use zkevm_prover::prover::{prove_for_queue, ProveRequest};
-use zkevm_prover::utils::FS_PROOF;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProveResult {
@@ -36,8 +37,10 @@ mod task_status {
 #[tokio::main]
 async fn main() {
     // Step1. prepare environment
+    // dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-    fs::create_dir_all(FS_PROOF).unwrap();
+
+    // fs::create_dir_all(FS_PROOF).unwrap();
     let queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::new(Mutex::new(Vec::new()));
 
     // Step2. start mng
@@ -93,10 +96,13 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     if queue_lock.len() > 0 {
         return String::from("add prove batch fail, please waiting for the pending task to complete");
     }
-    if let Some(value) = check_batch_status(&prove_request).await {
-        return value;
-    }
-    let proof_path = FS_PROOF.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
+    // if let Some(value) = check_batch_status(&prove_request).await {
+    //     return value;
+    // }
+    
+    dotenv().ok();
+    let prover_proof = var("PROVER_PROOF_DIR").expect("PROVER_PROOF env var");
+    let proof_path = prover_proof + format!("/batch_{}", &prove_request.batch_index).as_str();
     fs::create_dir_all(proof_path.clone()).unwrap();
     log::info!("add pending req of batch: {:#?}", prove_request.batch_index);
 
@@ -119,7 +125,9 @@ async fn check_batch_status(prove_request: &ProveRequest) -> Option<String> {
     }
 
     // Read proof directory.
-    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
+    dotenv().ok();
+    let prover_proof = var("PROVER_PROOF_DIR").expect("PROVER_PROOF env var");
+    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(prover_proof);
     let entries = match proof_dir {
         Ok(entries) => entries,
         Err(_) => return Some(String::from("Read proof dir error")),
@@ -155,7 +163,10 @@ async fn query_prove_result(batch_index: String) -> String {
 }
 
 async fn query_proof(batch_index: String) -> ProveResult {
-    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(FS_PROOF);
+    dotenv().ok();
+    let prover_proof = var("PROVER_PROOF_DIR").expect("PROVER_PROOF env var");
+
+    let proof_dir: Result<fs::ReadDir, std::io::Error> = fs::read_dir(prover_proof);
     let mut result = ProveResult {
         error_msg: String::new(),
         error_code: String::new(),
