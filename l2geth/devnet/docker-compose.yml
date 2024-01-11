@@ -6,7 +6,7 @@ volumes:
 
 services:
   sequencer_geth_prover:
-    image: morph/l2geth:latest
+    image: morph-geth:latest
     ports:
       - "6688:8545"
     healthcheck:
