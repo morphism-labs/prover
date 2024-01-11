@@ -19,7 +19,7 @@
       "useZktrie": true,
       "maxTxPerBlock": 44,
       "maxTxPayloadBytesPerBlock": 122880,
-      "feeVaultAddress": "0x716170D0687c3d31CC10DebE0dAa1DDD3FE3D792",
+      "feeVaultAddress": "0x77772Fb3715C4B8FC621e23Eda5ABbb34a9D6EAd",
       "enableEIP2718": false,
       "enableEIP1559": false
     }
