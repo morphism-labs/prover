@@ -82,9 +82,11 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
         log::warn!("Challenge event detected, batch index is: {:#?}", batch_index);
         METRICS.detected_batch_index.set(batch_index as i64);
         match query_proof(batch_index).await {
-            Some(_) => {
+            Some(prove_result) => {
                 log::info!("query proof and prove state: {:#?}", batch_index);
-                prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                if !prove_result.proof_data.is_empty() {
+                    prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                }
                 continue;
             }
             None => (),
@@ -99,23 +101,8 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             Some(batch) => batch,
             None => continue,
         };
+        log::info!("batch inspect: chunks.len =  {:#?}", batch_info.len());
         METRICS.chunks_len.set(batch_info.len() as i64);
-
-        let status = tokio::task::spawn_blocking(move || util::call_prover(String::default(), "/query_status"))
-            .await
-            .unwrap();
-
-        match status {
-            Some(info) => match info.as_str() {
-                "0" => METRICS.prover_status.set(1), // idle
-                "1" => METRICS.prover_status.set(2), // working
-                _ => METRICS.prover_status.set(0),   // unknown
-            },
-            None => {
-                METRICS.prover_status.set(0); // unknown
-                log::error!("prover status unknown");
-            }
-        }
 
         // Step4. Make a call to the Prove server.
         let request = ProveRequest {
@@ -154,19 +141,41 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
         }
 
         // Step5. query proof and prove onchain state.
-        std::thread::sleep(Duration::from_secs((4800 * batch_info.len() + 1800) as u64)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
+        let mut max_waiting_time: usize = 4800 * batch_info.len() + 1800; //chunk_prove_time =1h 20min，batch_prove_time = 24min
+        'waiting: while max_waiting_time > 300 {
+            std::thread::sleep(Duration::from_secs(300));
+            max_waiting_time -= 300;
+            match query_proof(batch_index).await {
+                Some(prove_result) => {
+                    log::info!("query proof and prove state: {:#?}", batch_index);
+                    if !prove_result.proof_data.is_empty() {
+                        prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                    }
+                    continue 'waiting;
+                }
+                None => {
+                    log::error!("prover status unknown, resubmit task");
+                    continue; // resubmit task
+                }
+            }
+        }
         log::info!("sleep finish, query proof and prove state: {:#?}", batch_index);
         prove_state(batch_index, &l1_rollup, &l1_provider).await;
     }
 }
 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
-    loop {
+    for _ in 1..2 {
         std::thread::sleep(Duration::from_secs(30));
         let prove_result = match query_proof(batch_index).await {
             Some(pr) => pr,
             None => continue,
         };
+
+        if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
+            log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
+            continue;
+        }
 
         let aggr_proof = Bytes::from(prove_result.proof_data);
         log::info!(
@@ -224,6 +233,7 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             };
         }
     }
+    return false;
 }
 
 /**
@@ -251,19 +261,14 @@ async fn query_proof(batch_index: u64) -> Option<ProveResult> {
         }
     };
 
-    if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
-        log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
-        return None;
-    }
-
     return Some(prove_result);
 }
 
 async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        // latest - U64::from(7200 * 3)
-        U64::from(1)
+        latest - U64::from(7200 * 3)
+        // U64::from(1)
     } else {
         U64::from(1)
     };
@@ -314,8 +319,8 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
 async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        // latest - U64::from(7200 * 3)
-        U64::from(1)
+        latest - U64::from(7200 * 3)
+        // U64::from(1)
     } else {
         U64::from(1)
     };
@@ -388,8 +393,6 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
         log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", hash);
         return None;
     };
-    let min_gas_limit = param.min_gas_limit;
-    log::info!("batch inspect: min_gas_limit =  {:#?}", min_gas_limit);
 
     let chunks: Vec<Bytes> = param.batch_data.chunks;
     return decode_chunks(chunks);
@@ -427,7 +430,7 @@ async fn test_decode_chunks() {
 
     use std::fs::File;
     use std::io::Read;
-    let mut file = File::open("./src/staking.data").unwrap();
+    let mut file = File::open("./src/input.data").unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
     let input = Bytes::from_str(contents.as_str()).unwrap();
