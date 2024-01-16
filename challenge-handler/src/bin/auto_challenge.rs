@@ -54,13 +54,16 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let proof_window = l1_rollup.proof_window().await?;
     log::info!("finalization_period: {:#?}  proof_window: {:#?}", finalization_period, proof_window);
 
+    let min_deposit: U256 = l1_rollup.min_deposit().await?;
+    log::info!("min_deposit: {:#?}", min_deposit);
+
     loop {
-        let _ = auto_challenge(&l1_provider, &l1_rollup).await;
+        let _ = auto_challenge(&l1_provider, &l1_rollup, min_deposit).await;
         std::thread::sleep(Duration::from_secs(interval));
     }
 }
 
-async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) -> Result<(), Box<dyn Error>> {
+async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType, min_deposit: U256) -> Result<(), Box<dyn Error>> {
     // Search for the latest batch.
     let latest = match l1_provider.get_block_number().await {
         Ok(bn) => bn,
@@ -136,7 +139,7 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
     }
 
     // l1_rollup.connect()
-    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(10u64.pow(18));
+    let tx: FunctionCall<_, _, _> = l1_rollup.challenge_state(batch_index).value(min_deposit);
     let rt = tx.send().await;
     let pending_tx = match rt {
         Ok(pending_tx) => {
@@ -188,8 +191,8 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType) ->
 async fn detecte_challenge(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<bool> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        // latest - U64::from(7200 * 3)
-        U64::from(1)
+        latest - U64::from(7200 * 3)
+        // U64::from(1)
     } else {
         U64::from(1)
     };
