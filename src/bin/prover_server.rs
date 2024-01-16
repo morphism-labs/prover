@@ -1,7 +1,10 @@
 use axum::extract::Extension;
+use axum::routing::get;
 use axum::{routing::post, Router};
 use dotenv::dotenv;
 use env_logger::Env;
+use once_cell::sync::Lazy;
+use prometheus::{Encoder, Registry, TextEncoder};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
@@ -28,6 +31,8 @@ mod task_status {
     pub const PROVED: &str = "Proved";
 }
 
+pub static REGISTRY: Lazy<Registry> = Lazy::new(|| Registry::new());
+
 // Main async function to start prover service.
 // 1. Initializes environment.
 // 2. Spawns management server.
@@ -49,6 +54,7 @@ async fn main() {
             .route("/prove_batch", post(add_pending_req))
             .route("/query_proof", post(query_prove_result))
             .route("/query_status", post(query_status))
+            .route("/metrics", get(handle_metrics))
             .layer(AddExtensionLayer::new(task_queue))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http());
@@ -62,6 +68,28 @@ async fn main() {
     // Step3. start prover
     let prove_queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::clone(&queue);
     prove_for_queue(prove_queue).await;
+}
+
+async fn handle_metrics() -> String {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+
+    // Gather the metrics.
+    let mut metric_families = REGISTRY.gather();
+    prometheus::default_registry();
+    metric_families.extend(prometheus::gather());
+
+    // Encode metrics to send.
+    match encoder.encode(&metric_families, &mut buffer) {
+        Ok(()) => {
+            let output = String::from_utf8(buffer.clone()).unwrap();
+            return output;
+        }
+        Err(e) => {
+            log::error!("encode metrics error: {:#?}", e);
+            return String::from("");
+        }
+    }
 }
 
 // Add pending prove request to queue.

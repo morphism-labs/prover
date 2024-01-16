@@ -142,7 +142,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 
         // Step5. query proof and prove onchain state.
         let mut max_waiting_time: usize = 4800 * batch_info.len() + 1800; //chunk_prove_time =1h 20min，batch_prove_time = 24min
-        'waiting: while max_waiting_time > 300 {
+        while max_waiting_time > 300 {
             std::thread::sleep(Duration::from_secs(300));
             max_waiting_time -= 300;
             match query_proof(batch_index).await {
@@ -150,12 +150,12 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                     log::info!("query proof and prove state: {:#?}", batch_index);
                     if !prove_result.proof_data.is_empty() {
                         prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                        break;
                     }
-                    continue 'waiting;
                 }
                 None => {
                     log::error!("prover status unknown, resubmit task");
-                    continue; // resubmit task
+                    break; // resubmit task
                 }
             }
         }
