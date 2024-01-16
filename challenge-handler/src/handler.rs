@@ -97,6 +97,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             Some(batch) => batch,
             None => continue,
         };
+        log::info!("chunks len = {:#?}", batch_info.len());
 
         // Step4. Make a call to the Prove server.
         let request = ProveRequest {
@@ -244,9 +245,8 @@ async fn query_proof(batch_index: u64) -> Option<ProveResult> {
 async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index: u64, l1_provider: &Provider<Http>) -> Option<TxHash> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        // latest - U64::from(7200 * 3)
-        U64::from(1)
-
+        latest - U64::from(7200 * 3)
+        // U64::from(1)
     } else {
         U64::from(1)
     };
@@ -297,8 +297,8 @@ async fn query_challenged_batch(latest: U64, l1_rollup: &RollupType, batch_index
 async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<u64> {
     let start = if latest > U64::from(7200 * 3) {
         // Depends on challenge period
-        // latest - U64::from(7200 * 3)
-        U64::from(1)
+        latest - U64::from(7200 * 3)
+        // U64::from(1)
     } else {
         U64::from(1)
     };
