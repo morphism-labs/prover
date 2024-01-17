@@ -13,5 +13,7 @@ all: build-prover build-challenge-handler
 	cp -f challenge-handler/target/release/challenge-handler make-bin/
 	cp -f challenge-handler/target/release/auto_challenge make-bin/
 
+build: build-prover build-challenge-handler
+
 run:all
 	./start.sh

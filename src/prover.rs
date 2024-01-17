@@ -42,7 +42,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         let prove_request: &ProveRequest = match queue_lock.first() {
             Some(req) => {
                 log::info!(
-                    "received prove request, batch index = {:#?}, chunks len = {:#?}",
+                    ">>Received prove request, batch index = {:#?}, chunks len = {:#?}",
                     req.batch_index,
                     req.chunks.len()
                 );
@@ -89,13 +89,16 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             };
 
             log::info!(
-                "Starting chunk prove, batchIndex = {:#?}, chunkIndex = {:#?}",
+                ">>Starting chunk prove, batchIndex = {:#?}, chunkIndex = {:#?}",
                 batch_index,
                 index
             );
             let chunk_proof: ChunkProof =
                 match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(proof_path.as_str())) {
-                    Ok(proof) => proof,
+                    Ok(proof) => {
+                        log::info!(">>chunk_{:#?} prove complate, batch index = {:#?}", index, batch_index);
+                        proof
+                    }
                     Err(e) => {
                         log::error!("chunk in batch_{:#?} prove err: {:#?}", batch_index, e);
                         queue_lock.pop();
@@ -113,12 +116,15 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         }
 
         // Step4. start batch prove
-        log::info!("Starting batch prove, batch index = {:#?}", &prove_request.batch_index);
+        log::info!(
+            ">>Starting batch prove, batch index = {:#?}",
+            &prove_request.batch_index
+        );
         let mut batch_prover = BatchProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
-                log::info!("batch prove complate, batch index = {:#?}", batch_index);
+                log::info!(">>batch prove complate, batch index = {:#?}", batch_index);
                 // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
                 if generate_verifier {
                     generate_evm_verifier(batch_prover, proof);

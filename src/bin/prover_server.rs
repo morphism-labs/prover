@@ -113,7 +113,6 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
     if prove_request.chunks.len() == 0 {
         return String::from("chunks is empty");
     }
-
     for chunk in &prove_request.chunks {
         if chunk.len() == 0 {
             return String::from("blocks is empty");
