@@ -41,10 +41,10 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
     dotenv().ok();
-    let l1_rpc = var("HANDLER_L1_RPC").expect("Cannot detect L1_RPC env var");
-    let l1_rollup_address = var("HANDLER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
-    let _ = var("HANDLER_PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
-    let private_key = var("CHALLENGE_HANDLER_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
+    let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
+    let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
+    let _ = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
+    let private_key = var("L1_ROLLUP_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_signer = Arc::new(SignerMiddleware::new(
@@ -61,7 +61,7 @@ pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) {
-    let l2_rpc = var("HANDLER_L2_RPC").expect("Cannot detect L2_RPC env var");
+    let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
 
     loop {
         std::thread::sleep(Duration::from_secs(12));
@@ -337,13 +337,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
     }
-
-    //TODO sort by batch index
-    //asc
     logs.sort_by(|a, b| a.block_number.unwrap().cmp(&b.block_number.unwrap()));
-
-    //desc
-    // logs.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
     for log in logs {
         let batch_index: u64 = log.topics[1].to_low_u64_be();
@@ -393,7 +387,6 @@ async fn batch_inspect(l1_provider: &Provider<Http>, hash: TxHash) -> Option<Vec
         log::error!("batch inspect: decode tx.input error, tx_hash =  {:#?}", hash);
         return None;
     };
-
     let chunks: Vec<Bytes> = param.batch_data.chunks;
     return decode_chunks(chunks);
 }
