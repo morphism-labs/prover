@@ -323,7 +323,8 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
             return None;
         }
     };
-    log::info!("l1_rollup.challenge_state.len = {:#?}", logs.len());
+    log::info!("{:#?} batches have already been challenged, and been found in recent 7200x3 L1 blocks.", logs.len());
+
     if logs.is_empty() {
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
