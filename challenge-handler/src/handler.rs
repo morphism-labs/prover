@@ -41,10 +41,10 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
     dotenv().ok();
-    let l1_rpc = var("L1_RPC").expect("Cannot detect L1_RPC env var");
-    let l1_rollup_address = var("L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
-    let _ = var("PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
-    let private_key = var("L1_ROLLUP_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
+    let l1_rpc = var("HANDLER_L1_RPC").expect("Cannot detect L1_RPC env var");
+    let l1_rollup_address = var("HANDLER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
+    let _ = var("HANDLER_PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
+    let private_key = var("CHALLENGE_HANDLER_PRIVATE_KEY").expect("Cannot detect L1_ROLLUP_PRIVATE_KEY env var");
 
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_signer = Arc::new(SignerMiddleware::new(
@@ -61,7 +61,7 @@ pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
 }
 
 async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) {
-    let l2_rpc = var("L2_RPC").expect("Cannot detect L2_RPC env var");
+    let l2_rpc = var("HANDLER_L2_RPC").expect("Cannot detect L2_RPC env var");
 
     loop {
         std::thread::sleep(Duration::from_secs(12));
