@@ -1,7 +1,6 @@
 use crate::abi::rollup_abi::{CommitBatchCall, Rollup};
 use crate::metrics::METRICS;
 use crate::util;
-use dotenv::dotenv;
 use ethers::providers::{Http, Provider};
 use ethers::signers::Wallet;
 use ethers::types::Address;
@@ -40,7 +39,6 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 
 pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
     // Prepare parameter.
-    dotenv().ok();
     let l1_rpc = var("HANDLER_L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("HANDLER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let _ = var("HANDLER_PROVER_RPC").expect("Cannot detect PROVER_RPC env var");
@@ -87,8 +85,8 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                 log::info!("query proof and prove state: {:#?}", batch_index);
                 if !prove_result.proof_data.is_empty() {
                     prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                    continue;
                 }
-                continue;
             }
             None => (),
         }

@@ -6,10 +6,12 @@ use challenge_handler::{
 use env_logger::Env;
 use prometheus::{Encoder, TextEncoder};
 use tower_http::trace::TraceLayer;
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
     // Initialize logger.
+    dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     log::info!("Starting challenge handler...");
 

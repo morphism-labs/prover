@@ -114,7 +114,7 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return String::from("chunks is empty");
     }
 
-    for chunk in &prove_request.chunks{
+    for chunk in &prove_request.chunks {
         if chunk.len() == 0 {
             return String::from("blocks is empty");
         }
@@ -195,6 +195,10 @@ async fn query_proof(batch_index: String) -> ProveResult {
         {
             //pi_batch_agg.data
             let proof_path = path.join("proof_batch_agg.data");
+            if !proof_path.exists() {
+                result.error_msg = String::from("No proof_batch_agg file");
+                return result;
+            }
             // let mut proof_data = String::new();
             let mut proof_data = Vec::new();
 
