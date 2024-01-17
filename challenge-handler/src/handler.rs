@@ -403,6 +403,8 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
     }
 
     let mut chunk_with_blocks: Vec<Vec<u64>> = vec![];
+    let mut txn_in_batch = 0;
+    let mut max_txn_in_chunk = 0;
     for chunk in chunks.iter() {
         let mut chunk_bn: Vec<u64> = vec![];
         let bs: &[u8] = chunk;
@@ -413,6 +415,9 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
         let num_blocks = U256::from_big_endian(bs.get(..1)?);
         for i in 0..num_blocks.as_usize() {
             let block_num = U256::from_big_endian(bs.get((60.mul(i) + 1)..(60.mul(i) + 1 + 8))?);
+            let txs_num = U256::from_big_endian(bs.get((60.mul(i) + 1 + 56)..(60.mul(i) + 1 + 58))?);
+            max_txn_in_chunk = max_txn_in_chunk.max(txs_num.as_u32());
+            txn_in_batch += txs_num.as_u32();
             chunk_bn.push(block_num.as_u64());
         }
 
@@ -420,8 +425,11 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
     }
 
     log::debug!("decode_chunks_blocknum: {:#?}", chunk_with_blocks);
+    log::debug!("max_txn_in_chunk: {:#?}", max_txn_in_chunk);
+    log::debug!("txs_num_chunk: {:#?}", txn_in_batch);
     return Some(chunk_with_blocks);
 }
+
 
 #[tokio::test]
 async fn test_decode_chunks() {
