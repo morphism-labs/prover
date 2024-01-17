@@ -348,11 +348,17 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
                 return None;
             }
         };
-
-        if batch_in_challenge {
+        let is_batch_finalized: bool = match l1_rollup.is_batch_finalized(U256::from(batch_index)).await {
+            Ok(x) => x,
+            Err(e) => {
+                log::info!("query l1_rollup.is_batch_finalized error, batch index = {:#?}, {:#?}", batch_index, e);
+                return None;
+            }
+        };
+        if batch_in_challenge && !is_batch_finalized {
             return Some(batch_index);
         }
-        log::info!("batch status not in challenge, batch index = {:#?}", batch_index);
+        log::info!("batch status not in challenge or finalized, batch index = {:#?}", batch_index);
     }
     log::info!("all batch's status not in challenge now");
     None
