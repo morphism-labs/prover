@@ -17,7 +17,7 @@ async fn main() {
     register_metrics();
     tokio::spawn(async move {
         let metrics = Router::new().route("/metrics", get(handle_metrics)).layer(TraceLayer::new_for_http());
-        axum::Server::bind(&"0.0.0.0:6060".parse().unwrap())
+        axum::Server::bind(&"0.0.0.0:6021".parse().unwrap())
             .serve(metrics.into_make_service())
             .await
             .unwrap();

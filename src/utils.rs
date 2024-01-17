@@ -16,7 +16,7 @@ pub static PROVER_L2_RPC: Lazy<String> =
 pub async fn get_block_traces_by_number(provider: &Provider<Http>, block_nums: &Vec<u64>) -> Option<Vec<BlockTrace>> {
     let mut block_traces: Vec<BlockTrace> = Vec::new();
     for block_num in block_nums {
-        log::info!("zkevm-prover: requesting trace of block {block_num}");
+        log::debug!("zkevm-prover: requesting trace of block {block_num}");
         let result = provider
             .request("morph_getBlockTraceByNumberOrHash", [format!("{block_num:#x}")])
             .await;

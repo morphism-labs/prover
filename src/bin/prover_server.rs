@@ -43,7 +43,7 @@ pub static REGISTRY: Lazy<Registry> = Lazy::new(|| Registry::new());
 async fn main() {
     // Step1. prepare environment
     dotenv().ok();
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -114,6 +114,12 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return String::from("chunks is empty");
     }
 
+    for chunk in &prove_request.chunks{
+        if chunk.len() == 0 {
+            return String::from("blocks is empty");
+        }
+    }
+
     // Verify RPC URL format
     if !prove_request.rpc.starts_with("http://") && !prove_request.rpc.starts_with("https://") {
         return String::from("invalid rpc url");
@@ -141,7 +147,7 @@ async fn check_batch_status(prove_request: &ProveRequest) -> Option<String> {
     let proof = query_proof(prove_request.batch_index.to_string()).await;
 
     // If proof data is not empty, the batch has already been proven.
-    if !proof.proof_data.is_empty() || !proof.pi_data.is_empty() {
+    if !proof.proof_data.is_empty() {
         log::warn!("there are already proven results: {:#?}", prove_request.batch_index);
         return Some(String::from(task_status::PROVED));
     }

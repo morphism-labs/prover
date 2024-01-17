@@ -74,6 +74,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                 continue;
             }
         };
+        log::info!("Current L1 block number: {:#?}", latest);
         // Step2. detecte challenge event.
         let batch_index = match detecte_challenge_event(latest, &l1_rollup, &l1_provider).await {
             Some(value) => value,
@@ -115,25 +116,19 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             .unwrap();
 
         match rt {
-            Some(info) => {
-                match info.as_str() {
-                    task_status::STARTED => log::info!("successfully submitted prove task, waiting for proof to be generated"),
-                    task_status::PROVING => {
-                        log::info!("waiting for proof to be generated");
-                        std::thread::sleep(Duration::from_secs(600)); //chunk_prove_time =1h 20min，batch_prove_time = 24min
-                        continue;
-                    }
-                    task_status::PROVED => {
-                        log::info!("proof already generated");
-                        prove_state(batch_index, &l1_rollup, &l1_provider).await;
-                        continue;
-                    }
-                    _ => {
-                        log::error!("submit prove task failed: {:#?}", info);
-                        continue;
-                    }
+            Some(info) => match info.as_str() {
+                task_status::STARTED => log::info!("successfully submitted prove task, waiting for proof to be generated"),
+                task_status::PROVING => log::info!("waiting for proof to be generated"),
+                task_status::PROVED => {
+                    log::info!("proof already generated");
+                    prove_state(batch_index, &l1_rollup, &l1_provider).await;
+                    continue;
                 }
-            }
+                _ => {
+                    log::error!("submit prove task failed: {:#?}", info);
+                    continue;
+                }
+            },
             None => {
                 log::error!("submit prove task failed");
                 continue;
@@ -147,7 +142,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             max_waiting_time -= 300;
             match query_proof(batch_index).await {
                 Some(prove_result) => {
-                    log::info!("query proof and prove state: {:#?}", batch_index);
+                    log::debug!("query proof and prove state: {:#?}", batch_index);
                     if !prove_result.proof_data.is_empty() {
                         prove_state(batch_index, &l1_rollup, &l1_provider).await;
                         break;
@@ -159,8 +154,6 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
                 }
             }
         }
-        log::info!("sleep finish, query proof and prove state: {:#?}", batch_index);
-        prove_state(batch_index, &l1_rollup, &l1_provider).await;
     }
 }
 
@@ -332,7 +325,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
             return None;
         }
     };
-    log::debug!("l1_rollup.challenge_state.get_logs.len = {:#?}", logs.len());
+    log::info!("l1_rollup.challenge_state.len = {:#?}", logs.len());
     if logs.is_empty() {
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
         return None;
@@ -358,7 +351,7 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
         if batch_in_challenge && !is_batch_finalized {
             return Some(batch_index);
         }
-        log::info!("batch status not in challenge or finalized, batch index = {:#?}", batch_index);
+        log::debug!("batch status not in challenge or finalized, batch index = {:#?}", batch_index);
     }
     log::info!("all batch's status not in challenge now");
     None
@@ -429,7 +422,6 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
     log::debug!("txs_num_chunk: {:#?}", txn_in_batch);
     return Some(chunk_with_blocks);
 }
-
 
 #[tokio::test]
 async fn test_decode_chunks() {

@@ -23,7 +23,7 @@ pub struct ProveRequest {
     pub rpc: String,
 }
 
-/// Generate AggCircuitProof for block trace.
+/// Generate EVM Proof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     dotenv().ok();
     let generate_verifier: bool = var("GENERATE_EVM_VERIFIER")
@@ -33,11 +33,12 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 
     env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
     let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
+    log::info!("Waiting for prove request");
     'task: loop {
-        thread::sleep(Duration::from_millis(4000));
+        thread::sleep(Duration::from_millis(12000));
         let mut queue_lock = prove_queue.lock().await;
 
-        // Step1. pop request from queue
+        // Step1. Get request from queue
         let prove_request: &ProveRequest = match queue_lock.first() {
             Some(req) => {
                 log::info!(
@@ -48,12 +49,14 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 req
             }
             None => {
-                log::info!("no prove request");
+                log::debug!("no prove request");
                 continue;
             }
         };
 
-        // Step2. fetch trace
+        let batch_index: u64 = prove_request.batch_index;
+
+        // Step2. Fetch trace
         let provider = match Provider::try_from(PROVER_L2_RPC.as_str()) {
             Ok(provider) => provider,
             Err(e) => {
@@ -61,6 +64,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 continue;
             }
         };
+        log::info!("requesting trace of batch: {:#?}", batch_index);
         let chunk_traces = match get_chunk_traces(&prove_request, provider).await {
             Some(chunk_traces) => chunk_traces,
             None => continue,
@@ -69,59 +73,59 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             continue;
         }
 
-        let proof_path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", &prove_request.batch_index).as_str();
+        let proof_path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
         fs::create_dir_all(proof_path.clone()).unwrap();
 
-        // Step3. start chunk prove
+        // Step3. Start chunk prove
         let mut chunk_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
         for (index, chunk_trace) in chunk_traces.iter().enumerate() {
             let chunk_witness = match chunk_trace_to_witness_block(chunk_trace.to_vec()) {
                 Ok(_witness) => _witness,
                 Err(e) => {
-                    log::error!("convert trace to witness error: {:#?}", e);
-                    continue;
+                    log::error!("convert trace to witness of batch = {:#?} error: {:#?}", batch_index, e);
+                    queue_lock.pop();
+                    continue 'task;
                 }
             };
-            let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
 
             log::info!(
-                "starting chunk prove, batch index = {:#?},chunk index = {:#?}",
-                &prove_request.batch_index,
+                "Starting chunk prove, batchIndex = {:#?}, chunkIndex = {:#?}",
+                batch_index,
                 index
             );
             let chunk_proof: ChunkProof =
                 match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(proof_path.as_str())) {
                     Ok(proof) => proof,
                     Err(e) => {
-                        log::error!("chunk prove err: {:#?}", e);
+                        log::error!("chunk in batch_{:#?} prove err: {:#?}", batch_index, e);
                         queue_lock.pop();
                         continue 'task;
                     }
                 };
-
+            let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
             chunk_proofs.push((chunk_hash, chunk_proof));
         }
 
         if chunk_proofs.len() != chunk_traces.len() {
-            log::error!("chunk proofs len err");
+            log::error!("chunk proofs len err, batchIndex = {:#?} ", batch_index);
             queue_lock.pop();
             continue;
         }
 
         // Step4. start batch prove
-        log::info!("starting batch prove, batch index = {:#?}", &prove_request.batch_index);
+        log::info!("Starting batch prove, batch index = {:#?}", &prove_request.batch_index);
         let mut batch_prover = BatchProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
         let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
         match batch_proof {
             Ok(proof) => {
-                log::info!("batch prove complate");
+                log::info!("batch prove complate, batch index = {:#?}", batch_index);
                 // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
                 if generate_verifier {
                     generate_evm_verifier(batch_prover, proof);
                 }
             }
             Err(e) => {
-                log::error!("batch prove err: {:#?}", e);
+                log::error!("batch_{:#?} prove err: {:#?}", batch_index, e);
                 queue_lock.pop();
             }
         }
@@ -130,7 +134,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 }
 
 fn generate_evm_verifier(mut batch_prover: BatchProver, proof: prover::BatchProof) {
-    log::info!("starting generate evm verifier");
+    log::info!("Starting generate evm verifier");
     let verifier = prover::common::Verifier::<CompressionCircuit>::from_params(
         batch_prover.inner.params(*LAYER4_DEGREE).clone(),
         &batch_prover.get_vk().unwrap(),
