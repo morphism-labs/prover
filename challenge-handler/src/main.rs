@@ -1,29 +1,23 @@
 use axum::{routing::get, Router};
+use challenge_handler::util::read_env_var;
 use challenge_handler::{
     handler,
     metrics::{METRICS, REGISTRY},
 };
+use dotenv::dotenv;
 use env_logger::Env;
 use prometheus::{Encoder, TextEncoder};
 use tower_http::trace::TraceLayer;
-use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
-    // Initialize logger.
+    // Prepare environment.
     dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     log::info!("Starting challenge handler...");
 
-    // prometheus.
-    register_metrics();
-    tokio::spawn(async move {
-        let metrics = Router::new().route("/metrics", get(handle_metrics)).layer(TraceLayer::new_for_http());
-        axum::Server::bind(&"0.0.0.0:6021".parse().unwrap())
-            .serve(metrics.into_make_service())
-            .await
-            .unwrap();
-    });
+    // Start metric management.
+    metric_mng().await;
 
     // Start challenge handler.
     let result = handler::handle_challenge().await;
@@ -35,6 +29,19 @@ async fn main() {
             log::error!("challenge handler exec error: {:#?}", e);
         }
     }
+}
+
+// Metric management
+async fn metric_mng() {
+    register_metrics();
+    let metric_address = read_env_var("HANDLER_METRIC_ADDRESS", "0.0.0.0:6060".to_string());
+    tokio::spawn(async move {
+        let metrics = Router::new().route("/metrics", get(handle_metrics)).layer(TraceLayer::new_for_http());
+        axum::Server::bind(&metric_address.parse().unwrap())
+            .serve(metrics.into_make_service())
+            .await
+            .unwrap();
+    });
 }
 
 fn register_metrics() {
@@ -65,16 +72,4 @@ async fn handle_metrics() -> String {
             return String::from("");
         }
     }
-}
-
-#[test]
-fn test() {
-    let mut data: Vec<i32> = vec![1];
-    let value = data.first();
-    println!("value: {:?}", value);
-    println!("{:?}", data.len());
-
-    let value1 = data.pop();
-    println!("value: {:?}", value1);
-    println!("{:?}", data.len());
 }

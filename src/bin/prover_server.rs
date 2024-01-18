@@ -10,6 +10,7 @@ use std::fs;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zkevm_prover::utils::read_env_var;
 use zkevm_prover::utils::PROVER_PROOF_DIR;
 
 use tower_http::add_extension::AddExtensionLayer;
@@ -45,16 +46,23 @@ async fn main() {
     dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
+    // Step2. start prover management
     let queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::new(Mutex::new(Vec::new()));
+    prover_mng(Arc::clone(&queue)).await;
 
-    // Step2. start mng
-    let task_queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::clone(&queue);
+    // Step3. start metric management
+    metric_mng().await;
+
+    // Step4. start prover
+    prove_for_queue(Arc::clone(&queue)).await;
+}
+
+async fn prover_mng(task_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     tokio::spawn(async {
         let service = Router::new()
             .route("/prove_batch", post(add_pending_req))
             .route("/query_proof", post(query_prove_result))
             .route("/query_status", post(query_status))
-            .route("/metrics", get(handle_metrics))
             .layer(AddExtensionLayer::new(task_queue))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http());
@@ -64,10 +72,20 @@ async fn main() {
             .await
             .unwrap();
     });
+}
 
-    // Step3. start prover
-    let prove_queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::clone(&queue);
-    prove_for_queue(prove_queue).await;
+async fn metric_mng() {
+    let metric_address = read_env_var("PROVER_METRIC_ADDRESS", "0.0.0.0:6060".to_string());
+    prometheus::default_registry();
+    tokio::spawn(async move {
+        let metrics = Router::new()
+            .route("/metrics", get(handle_metrics))
+            .layer(TraceLayer::new_for_http());
+        axum::Server::bind(&metric_address.parse().unwrap())
+            .serve(metrics.into_make_service())
+            .await
+            .unwrap();
+    });
 }
 
 async fn handle_metrics() -> String {
@@ -76,7 +94,6 @@ async fn handle_metrics() -> String {
 
     // Gather the metrics.
     let mut metric_families = REGISTRY.gather();
-    prometheus::default_registry();
     metric_families.extend(prometheus::gather());
 
     // Encode metrics to send.
