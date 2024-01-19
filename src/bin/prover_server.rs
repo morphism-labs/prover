@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use zkevm_prover::utils::read_env_var;
 use zkevm_prover::utils::PROVER_PROOF_DIR;
 
@@ -149,11 +151,11 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return value;
     }
 
-    let queue_try_lock = queue.try_lock();
-    if queue_try_lock.is_err() {
-        return String::from(task_status::PROVING);
-    }
-    let mut queue_lock = queue_try_lock.ok().unwrap();
+    let mut queue_lock = match timeout(Duration::from_secs(1), queue.lock()).await {
+        Ok(queue_lock) => queue_lock,
+        Err(_) => return String::from(task_status::PROVING),
+    };
+
     if queue_lock.len() > 0 {
         return String::from(task_status::PROVING);
     }
