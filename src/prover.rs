@@ -1,7 +1,7 @@
 use crate::utils::{
-    get_block_traces_by_number, PROVER_L2_RPC, PROVER_PARAMS_DIR, PROVER_PROOF_DIR, SCROLL_PROVER_ASSETS_DIR,
+    get_block_traces_by_number, GENERATE_EVM_VERIFIER, PROVER_L2_RPC, PROVER_PARAMS_DIR, PROVER_PROOF_DIR,
+    SCROLL_PROVER_ASSETS_DIR,
 };
-use dotenv::dotenv;
 use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
 use prover::config::{LayerId, LAYER4_DEGREE};
@@ -9,9 +9,10 @@ use prover::utils::chunk_trace_to_witness_block;
 use prover::zkevm::Prover as ChunkProver;
 use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
 use serde::{Deserialize, Serialize};
-use std::env::var;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::time::Duration;
-use std::{env, fs};
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
 
@@ -25,13 +26,6 @@ pub struct ProveRequest {
 
 /// Generate EVM Proof for block trace.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
-    dotenv().ok();
-    let generate_verifier: bool = var("GENERATE_EVM_VERIFIER")
-        .expect("GENERATE_EVM_VERIFIER env var")
-        .parse()
-        .expect("Cannot parse GENERATE_EVM_VERIFIER env var");
-
-    env::set_var("CHUNK_PROTOCOL_FILENAME", "chunk.protocol");
     let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
     log::info!("Waiting for prove request");
     'task: loop {
@@ -87,6 +81,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                     continue 'task;
                 }
             };
+            let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
 
             log::info!(
                 ">>Starting chunk prove, batchIndex = {:#?}, chunkIndex = {:#?}",
@@ -105,7 +100,12 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                         continue 'task;
                     }
                 };
-            let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
+
+            //save chunk.protocol
+            let protocol = &chunk_proof.protocol;
+            let mut params_file = File::create(SCROLL_PROVER_ASSETS_DIR.to_string() + "/chunk.protocol").unwrap();
+            params_file.write_all(&protocol[..]).unwrap();
+
             chunk_proofs.push((chunk_hash, chunk_proof));
         }
 
@@ -126,7 +126,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             Ok(proof) => {
                 log::info!(">>batch prove complate, batch index = {:#?}", batch_index);
                 // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
-                if generate_verifier {
+                if GENERATE_EVM_VERIFIER.to_owned() {
                     generate_evm_verifier(batch_prover, proof);
                 }
             }

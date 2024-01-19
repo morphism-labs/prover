@@ -45,6 +45,10 @@ async fn main() {
     // Step1. prepare environment
     dotenv().ok();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    log::info!(
+        "SCROLL_PROVER_ASSETS_DIR env: {:#?}",
+        zkevm_prover::utils::SCROLL_PROVER_ASSETS_DIR.as_str()
+    );
 
     // Step2. start prover management
     let queue: Arc<Mutex<Vec<ProveRequest>>> = Arc::new(Mutex::new(Vec::new()));
