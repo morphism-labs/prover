@@ -149,11 +149,14 @@ async fn add_pending_req(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>
         return value;
     }
 
-    let mut queue_lock = queue.lock().await;
+    let queue_try_lock = queue.try_lock();
+    if queue_try_lock.is_err() {
+        return String::from(task_status::PROVING);
+    }
+    let mut queue_lock = queue_try_lock.ok().unwrap();
     if queue_lock.len() > 0 {
         return String::from(task_status::PROVING);
     }
-
     // Add request to queue
     log::info!("add pending req of batch: {:#?}", prove_request.batch_index);
     queue_lock.push(prove_request);
@@ -256,7 +259,12 @@ async fn query_proof(batch_index: String) -> ProveResult {
 // Async function to check queue status.
 // Locks queue and returns length > 0 ? "not empty" : "empty"
 async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>) -> String {
-    match queue.lock().await.len() {
+    let queue_try_lock = queue.try_lock();
+    if queue_try_lock.is_err() {
+        return String::from("1");
+    }
+    let queue_lock = queue_try_lock.ok().unwrap();
+    match queue_lock.len() {
         0 => String::from("0"),
         _ => String::from("1"),
     }

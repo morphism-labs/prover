@@ -17,7 +17,7 @@ The hallenge-handler detects L1 challenge events, then sends a prove request to 
 `./download_params.sh`
 
 ## build
-`git clone https://github.com/morphism-labs/prover.git`
+`git clone https://github.com/morphism-labs/prover.git`  
 `cd prover`  
 `make build`  
 
