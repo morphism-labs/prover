@@ -417,8 +417,8 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
     }
 
     log::debug!("decode_chunks_blocknum: {:#?}", chunk_with_blocks);
-    log::debug!("max_txn_in_chunk: {:#?}", max_txn_in_chunk);
-    log::debug!("txs_num_chunk: {:#?}", txn_in_batch);
+    log::info!("max_txn_in_chunk: {:#?}", max_txn_in_chunk);
+    log::info!("txs_num_chunk: {:#?}", txn_in_batch);
     return Some(chunk_with_blocks);
 }
 
