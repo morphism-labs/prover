@@ -1,6 +1,5 @@
 use crate::utils::{
-    get_block_traces_by_number, GENERATE_EVM_VERIFIER, PROVER_L2_RPC, PROVER_PARAMS_DIR, PROVER_PROOF_DIR,
-    SCROLL_PROVER_ASSETS_DIR,
+    get_block_traces_by_number, GENERATE_EVM_VERIFIER, PROVER_L2_RPC, PROVER_PARAMS_DIR, PROVER_PROOF_DIR, PROVE_RESULT, PROVE_TIME, SCROLL_PROVER_ASSETS_DIR
 };
 use ethers::providers::Provider;
 use prover::aggregator::Prover as BatchProver;
@@ -12,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
 
@@ -31,8 +30,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     loop {
         thread::sleep(Duration::from_millis(12000));
 
+        // Step1. Get request from queue
         let (batch_index, chunks) = {
-            // Step1. Get request from queue
             let queue_lock = prove_queue.lock().await;
             let req = match queue_lock.first() {
                 Some(req) => {
@@ -56,6 +55,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             Ok(provider) => provider,
             Err(e) => {
                 log::error!("Failed to init provider: {:#?}", e);
+                PROVE_RESULT.set(2);
                 continue;
             }
         };
@@ -66,6 +66,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         };
         if chunk_traces.is_empty() {
             prove_queue.lock().await.pop();
+            PROVE_RESULT.set(2);
             continue;
         }
 
@@ -76,6 +77,8 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 }
 
 async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, chunk_prover: &mut ChunkProver) {
+    let start = Instant::now();
+
     let proof_path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
     fs::create_dir_all(proof_path.clone()).unwrap();
     let mut chunk_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
@@ -84,6 +87,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             Ok(_witness) => _witness,
             Err(e) => {
                 log::error!("convert trace to witness of batch = {:#?} error: {:#?}", batch_index, e);
+                PROVE_RESULT.set(2);
                 return;
             }
         };
@@ -103,6 +107,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                 }
                 Err(e) => {
                     log::error!("chunk in batch_{:#?} prove err: {:#?}", batch_index, e);
+                    PROVE_RESULT.set(2);
                     return;
                 }
             };
@@ -126,15 +131,20 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     match batch_proof {
         Ok(proof) => {
             log::info!(">>batch prove complate, batch index = {:#?}", batch_index);
+            PROVE_RESULT.set(1);
             // let params: ParamsKZG<Bn256> = prover::utils::load_params("params_dir", 26, None).unwrap();
             if GENERATE_EVM_VERIFIER.to_owned() {
                 generate_evm_verifier(batch_prover, proof);
             }
         }
         Err(e) => {
+            PROVE_RESULT.set(2);
             log::error!("batch_{:#?} prove err: {:#?}", batch_index, e);
         }
     }
+    let duration = start.elapsed();
+    let minutes = duration.as_secs() / 60;
+    PROVE_TIME.set(minutes.try_into().unwrap());
     return;
 }
 
@@ -192,3 +202,4 @@ async fn test() {
     let mut params_file = File::create("configs/chunk.protocol").unwrap();
     params_file.write_all(&protocol[..]).unwrap();
 }
+

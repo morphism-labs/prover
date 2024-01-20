@@ -3,8 +3,7 @@ use axum::routing::get;
 use axum::{routing::post, Router};
 use dotenv::dotenv;
 use env_logger::Env;
-use once_cell::sync::Lazy;
-use prometheus::{Encoder, Registry, TextEncoder};
+use prometheus::{Encoder, TextEncoder};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
@@ -12,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
-use zkevm_prover::utils::read_env_var;
-use zkevm_prover::utils::PROVER_PROOF_DIR;
+use zkevm_prover::utils::{PROVER_PROOF_DIR, PROVE_TIME};
+use zkevm_prover::utils::{read_env_var, PROVE_RESULT, REGISTRY};
 
 use tower_http::add_extension::AddExtensionLayer;
 use tower_http::cors::CorsLayer;
@@ -33,8 +32,6 @@ mod task_status {
     pub const PROVING: &str = "Proving";
     pub const PROVED: &str = "Proved";
 }
-
-pub static REGISTRY: Lazy<Registry> = Lazy::new(|| Registry::new());
 
 // Main async function to start prover service.
 // 1. Initializes environment.
@@ -81,8 +78,11 @@ async fn prover_mng(task_queue: Arc<Mutex<Vec<ProveRequest>>>) {
 }
 
 async fn metric_mng() {
-    let metric_address = read_env_var("PROVER_METRIC_ADDRESS", "0.0.0.0:6060".to_string());
     prometheus::default_registry();
+    REGISTRY.register(Box::new(PROVE_RESULT.clone())).unwrap();
+    REGISTRY.register(Box::new(PROVE_TIME.clone())).unwrap();
+
+    let metric_address = read_env_var("PROVER_METRIC_ADDRESS", "0.0.0.0:6060".to_string());
     tokio::spawn(async move {
         let metrics = Router::new()
             .route("/metrics", get(handle_metrics))
@@ -273,52 +273,8 @@ async fn query_status(Extension(queue): Extension<Arc<Mutex<Vec<ProveRequest>>>>
 }
 
 #[tokio::test]
-async fn test_query_proof() {
-    use std::path::Path;
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-
-    let proof = query_prove_result("1".to_string()).await;
-    let prove_result: ProveResult = match serde_json::from_str(proof.as_str()) {
-        Ok(pr) => pr,
-        Err(_) => {
-            log::error!("deserialize prove_result failed, batch index = {:#?}", 1);
-            return;
-        }
-    };
-    use ethers::abi::AbiDecode;
-    use std::str::FromStr;
-
-    let aggr_proof = ethers::types::Bytes::from(prove_result.proof_data);
-    //     Ok(ap) => ap,
-    //     Err(e) => {
-    //         log::error!("decode proof_data failed, error = {:#?}", e);
-    //         return;
-    //     }
-    // };
-    let mut proof_data1 = aggr_proof.to_vec();
-
-    // println!("{:?}", aggr_proof);
-
-    // let proof_path = Path("proof_batch_agg.data");
-    let proof_path = Path::new("proof/batch_1/proof_batch_agg.data");
-
-    let mut proof_data = Vec::new();
-    // let mut proof_data = ethers::types::Bytes::new();
-
-    match fs::File::open(proof_path) {
-        Ok(mut file) => {
-            file.read_to_end(&mut proof_data).unwrap();
-        }
-        Err(e) => {
-            log::error!("Failed to load proof_data: {:#?}", e);
-        }
-    }
-    println!("{:?}", aggr_proof);
-}
-
-#[tokio::test]
-async fn test() {
-    let request = ProveRequest {
+async fn test_gen_request() {
+    let request: ProveRequest = ProveRequest {
         batch_index: 4,
         chunks: vec![vec![1], vec![2, 3]],
         rpc: String::from("127.0.0.1:8569"),

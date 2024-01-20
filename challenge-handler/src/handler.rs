@@ -51,14 +51,16 @@ pub async fn handle_challenge() -> Result<(), Box<dyn Error>> {
             .unwrap()
             .with_chain_id(l1_provider.get_chainid().await.unwrap().as_u64()),
     ));
+    let wallet_address: Address = l1_signer.address();
+
     let l1_rollup: RollupType = Rollup::new(Address::from_str(l1_rollup_address.as_str())?, l1_signer);
 
-    handle_with_prover(l1_provider, l1_rollup).await;
+    handle_with_prover(wallet_address, l1_provider, l1_rollup).await;
 
     Ok(())
 }
 
-async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) {
+async fn handle_with_prover(wallet_address: Address, l1_provider: Provider<Http>, l1_rollup: RollupType) {
     let l2_rpc = var("HANDLER_L2_RPC").expect("Cannot detect L2_RPC env var");
 
     loop {
@@ -73,6 +75,17 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
             }
         };
         log::info!("Current L1 block number: {:#?}", latest);
+
+        // Record wallet balance.
+        let balance = match l1_provider.get_balance(wallet_address, None).await {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("handler_wallet.get_balance error: {:#?}", e);
+                return;
+            }
+        };
+        METRICS.wallet_balance.set(ethers::utils::format_ether(balance).parse().unwrap_or(0.0));
+
         // Step2. detecte challenge event.
         let batch_index = match detecte_challenge_event(latest, &l1_rollup, &l1_provider).await {
             Some(value) => value,
@@ -116,7 +129,7 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
         match rt {
             Some(info) => match info.as_str() {
                 task_status::STARTED => log::info!("successfully submitted prove task, waiting for proof to be generated"),
-                task_status::PROVING => log::info!("waiting for proof to be generated"),
+                task_status::PROVING => log::info!("waiting for prev proof to be generated"),
                 task_status::PROVED => {
                     log::info!("proof already generated");
                     prove_state(batch_index, &l1_rollup, &l1_provider).await;
@@ -156,25 +169,20 @@ async fn handle_with_prover(l1_provider: Provider<Http>, l1_rollup: RollupType) 
 }
 
 async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> bool {
-    for _ in 1..2 {
+    for _ in 0..2 {
         std::thread::sleep(Duration::from_secs(30));
         let prove_result = match query_proof(batch_index).await {
             Some(pr) => pr,
             None => continue,
         };
 
-        if prove_result.pi_data.is_empty() || prove_result.proof_data.is_empty() {
-            log::warn!("query proof of {:#?}, pi_data or  proof_data is empty", batch_index);
+        if prove_result.proof_data.is_empty() {
+            log::warn!("query proof of {:#?}, proof_data is empty", batch_index);
             continue;
         }
 
+        log::info!("starting prove state onchain, batch index = {:#?}", batch_index);
         let aggr_proof = Bytes::from(prove_result.proof_data);
-        log::info!(
-            "starting prove state onchain, batch index = {:#?}, aggr_proof = {:#?}",
-            batch_index,
-            aggr_proof
-        );
-
         let tx = l1_rollup.prove_state(batch_index, aggr_proof);
         let rt = tx.send().await;
         let pending_tx = match rt {
@@ -184,12 +192,13 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
             }
             Err(e) => {
                 log::error!("send tx of prove_state error: {:#?}", e);
+                METRICS.verify_result.set(2);
                 match e {
                     ContractError::Revert(data) => {
                         let msg = String::decode_with_selector(&data).unwrap_or(String::from("decode contract revert error"));
                         log::error!("send tx of prove_state error, msg: {:#?}", msg);
                     }
-                    _ => {}
+                    _ => (),
                 }
                 continue;
             }
@@ -205,8 +214,14 @@ async fn prove_state(batch_index: u64, l1_rollup: &RollupType, l1_provider: &Pro
                 Some(tr) => {
                     // Either 1 (success) or 0 (failure).
                     match tr.status.unwrap_or_default().as_u64() {
-                        1 => log::info!("prove_state receipt success: {:#?}", tr.transaction_hash),
-                        _ => log::error!("prove_state receipt fail: {:#?}", tr),
+                        1 => {
+                            METRICS.verify_result.set(1);
+                            log::info!("prove_state receipt success: {:#?}", tr.transaction_hash)
+                        }
+                        _ => {
+                            METRICS.verify_result.set(2);
+                            log::error!("prove_state receipt fail: {:#?}", tr)
+                        }
                     };
                     return true;
                 }
@@ -323,7 +338,10 @@ async fn detecte_challenge_event(latest: U64, l1_rollup: &RollupType, l1_provide
             return None;
         }
     };
-    log::info!("{:#?} batches have already been challenged, and been found in recent 7200x3 L1 blocks.", logs.len());
+    log::info!(
+        "{:#?} batches have already been challenged, and been found in recent 7200x3 L1 blocks.",
+        logs.len()
+    );
 
     if logs.is_empty() {
         log::debug!("no challenge state logs, start blocknum = {:#?}, latest blocknum = {:#?}", start, latest);
@@ -415,7 +433,7 @@ fn decode_chunks(chunks: Vec<Bytes>) -> Option<Vec<Vec<u64>>> {
 
         chunk_with_blocks.push(chunk_bn);
     }
-
+    METRICS.txn_len.set(txn_in_batch.into());
     log::debug!("decode_chunks_blocknum: {:#?}", chunk_with_blocks);
     log::info!("max_l2txn_in_chunk: {:#?}", max_txn_in_chunk);
     log::info!("total_l2txn_in_batch: {:#?}", txn_in_batch);
