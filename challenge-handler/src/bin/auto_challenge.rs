@@ -18,15 +18,11 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn main() -> Result<(), Box<dyn Error>> {
     // Prepare env.
     log::info!("starting auto-challenge...");
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     dotenv().ok();
     let l1_rpc = var("CHALLENGER_L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("CHALLENGER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
     let private_key = var("CHALLENGER_PRIVATEKEY").expect("Cannot detect CHALLENGER_PRIVATEKEY env var");
-    let interval: u64 = var("CHALLENGER_INTERVAL")
-        .expect("Cannot detect INTERVAL env var")
-        .parse()
-        .expect("Cannot parse INTERVAL env var");
     let l1_provider: Provider<Http> = Provider::<Http>::try_from(l1_rpc)?;
     let l1_signer = Arc::new(SignerMiddleware::new(
         l1_provider.clone(),
@@ -58,8 +54,8 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("min_deposit: {:#?}", min_deposit);
 
     loop {
+        std::thread::sleep(Duration::from_secs(12));
         let _ = auto_challenge(&l1_provider, &l1_rollup, min_deposit).await;
-        std::thread::sleep(Duration::from_secs(interval));
     }
 }
 
