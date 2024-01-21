@@ -18,7 +18,7 @@ type RollupType = Rollup<SignerMiddleware<Provider<Http>, LocalWallet>>;
 pub async fn main() -> Result<(), Box<dyn Error>> {
     // Prepare env.
     log::info!("starting auto-challenge...");
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     dotenv().ok();
     let l1_rpc = var("CHALLENGER_L1_RPC").expect("Cannot detect L1_RPC env var");
     let l1_rollup_address = var("CHALLENGER_L1_ROLLUP").expect("Cannot detect L1_ROLLUP env var");
