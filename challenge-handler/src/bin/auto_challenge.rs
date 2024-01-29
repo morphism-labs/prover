@@ -218,7 +218,7 @@ async fn detecte_challenge(latest: U64, l1_rollup: &RollupType, l1_provider: &Pr
         };
         let is_batch_finalized: bool = l1_rollup.is_batch_finalized(U256::from(batch_index)).await.unwrap();
 
-        if batch_in_challenge && !is_batch_finalized {
+        if batch_in_challenge {
             log::warn!("prev challenge not finalized, batch index = {:#?}", batch_index);
             return Some(true);
         }
