@@ -16,6 +16,6 @@ lazy_static! {
         chunks_len: IntGauge::new("chunks_len", "chunks len").expect("chunks_len metric can be created"),
         txn_len: IntGauge::new("txn_len", "txn len").expect("txn_len metric can be created"),
         verify_result: IntGauge::new("verify_result", "verify result").expect("verify metric can be created"),
-        wallet_balance: Gauge::new("wallet_balance", "wallet balance").expect("wallet metric can be created"),
+        wallet_balance: Gauge::new("handler_wallet_balance", "handler wallet balance").expect("wallet metric can be created"),
     };
 }
