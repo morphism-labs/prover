@@ -185,9 +185,9 @@ async fn auto_challenge(l1_provider: &Provider<Http>, l1_rollup: &RollupType, mi
 }
 
 async fn detecte_challenge(latest: U64, l1_rollup: &RollupType, l1_provider: &Provider<Http>) -> Option<bool> {
-    let start = if latest > U64::from(7200 * 3) {
-        // Depends on challenge period
-        latest - U64::from(7200 * 3)
+    let start = if latest > U64::from(7200) {
+        // Depends on proof window
+        latest - U64::from(7200)
         // U64::from(1)
     } else {
         U64::from(1)
