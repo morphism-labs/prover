@@ -108,7 +108,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     }
 
     // todo: get batch_commit from eth trace
-    let batch_commit: U256 = U256::from(0);
+    let batch_commit: U256 = U256::from(1);
 
     // challenge_point = keccak256(batch_commit||batchBlob)
     let mut pre: Vec<u8> = vec![];
@@ -144,6 +144,8 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             batch_index,
             index
         );
+        log::info!("=========gen_chunk_proof_with_index, batch_commit= {:#?}, challenge_point= {:#?}, index= {:#?} ", batch_commit, challenge_point, index);
+
         // Start chunk prove
         let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof_with_index(
             chunk_trace.to_vec(),
