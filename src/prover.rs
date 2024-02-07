@@ -108,13 +108,14 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     }
 
     // todo: get batch_commit from eth trace
-    let batch_commit: U256 = U256::from(1);
+    let batch_commit: U256 = U256::from(0);
 
     // challenge_point = keccak256(batch_commit||batchBlob)
     let mut pre: Vec<u8> = vec![];
     pre.extend(batch_commit.to_le_bytes().to_vec());
     pre.extend(batch_blob);
-    let challenge_point = U256::from(0);
+    // let challenge_point = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
+    let challenge_point = U256::from(128);
 
     let mut index = 0;
     for chunk_trace in chunk_traces.iter(){

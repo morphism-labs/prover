@@ -47,7 +47,7 @@ dependencies = [
 [[package]]
 name = "aggregator"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "ark-std 0.3.0",
  "bls12_381 0.7.0 (git+https://github.com/chengwenxi/bls12_381.git?branch=eip4844)",
@@ -130,9 +130,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.75"
+version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
+checksum = "080e9890a082662b09c1ad45f567faeeb47f22b5fb23895fbe1e651e718e25ca"
 
 [[package]]
 name = "arc-swap"
@@ -564,7 +564,7 @@ dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
  "pairing",
- "pasta_curves",
+ "pasta_curves 0.4.1",
  "rand_core",
  "subtle",
 ]
@@ -577,7 +577,7 @@ dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
  "pairing",
- "pasta_curves",
+ "pasta_curves 0.4.1",
  "rand_core",
  "subtle",
 ]
@@ -622,7 +622,7 @@ checksum = "7f30e7476521f6f8af1a1c4c0b8cc94f0bee37d91763d0ca2665f299b6cd8aec"
 [[package]]
 name = "bus-mapping"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "eth-types",
  "ethers-core",
@@ -1401,7 +1401,7 @@ dependencies = [
 [[package]]
 name = "eth-types"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "ethers-core",
  "ethers-signers",
@@ -1721,7 +1721,7 @@ dependencies = [
 [[package]]
 name = "external-tracer"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "eth-types",
  "geth-utils",
@@ -1774,6 +1774,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ded41244b729663b1e574f1b4fb731469f69f79c17667b5d776b16cda0479449"
 dependencies = [
+ "bitvec",
  "rand_core",
  "subtle",
 ]
@@ -1958,7 +1959,7 @@ dependencies = [
 [[package]]
 name = "gadgets"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "digest 0.7.6",
  "eth-types",
@@ -1991,7 +1992,7 @@ dependencies = [
 [[package]]
 name = "geth-utils"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "env_logger 0.9.3",
  "gobuild 0.1.0-alpha.2 (git+https://github.com/scroll-tech/gobuild.git)",
@@ -2017,18 +2018,18 @@ checksum = "6fb8d784f27acf97159b40fc4db5ecd8aa23b9ad5ef69cdd136d3bc80665f0c0"
 
 [[package]]
 name = "git-version"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13ad01ffa8221f7fe8b936d6ffb2a3e7ad428885a04fad51866a5f33eafda57c"
+checksum = "1ad568aa3db0fcbc81f2f116137f263d7304f512a1209b35b85150d3ef88ad19"
 dependencies = [
  "git-version-macro",
 ]
 
 [[package]]
 name = "git-version-macro"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84488ccbdb24ad6f56dc1863b4a8154a7856cd3c6c7610401634fab3cb588dae"
+checksum = "53010ccb100b96a67bc32c0175f0ed1426b31b655d562898e57325f81c023ac0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2065,7 +2066,7 @@ dependencies = [
 [[package]]
 name = "gobuild"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/scroll-tech/gobuild.git#8b84111fc3b58e2134e4794a06d1f199412cf2b0"
+source = "git+https://github.com/scroll-tech/gobuild.git#24935c2b8f677841f22acd6710957621bb294e0e"
 dependencies = [
  "cc",
 ]
@@ -2182,7 +2183,7 @@ dependencies = [
 [[package]]
 name = "halo2-gate-generator"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/halo2gategen.git#35b137de2f71c37dfbd236842b868013c46739d1"
+source = "git+https://github.com/scroll-tech/halo2gategen.git#2fa5c39aa67d0f97d660f37954daa9e897d0a4c1"
 dependencies = [
  "halo2_proofs",
  "lazy_static",
@@ -2220,24 +2221,46 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#5cf9a3726525810af41ef416e0292ec999b34030"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=develop#1070391642dd64b2d68b47ec246cba9e35bd3c15"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
  "cfg-if 0.1.10",
  "crossbeam",
- "ff 0.12.1",
- "group 0.12.1",
- "halo2curves",
+ "ff 0.13.0",
+ "group 0.13.0",
+ "halo2curves 0.1.0",
  "log",
  "num-bigint",
  "num-integer",
- "poseidon",
+ "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=main)",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
  "subtle",
  "tracing",
+]
+
+[[package]]
+name = "halo2curves"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6b1142bd1059aacde1b477e0c80c142910f1ceae67fc619311d6a17428007ab"
+dependencies = [
+ "blake2b_simd",
+ "ff 0.13.0",
+ "group 0.13.0",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves 0.5.1",
+ "paste",
+ "rand",
+ "rand_core",
+ "serde",
+ "serde_arrays",
+ "static_assertions",
+ "subtle",
 ]
 
 [[package]]
@@ -2250,7 +2273,7 @@ dependencies = [
  "lazy_static",
  "num-bigint",
  "num-traits",
- "pasta_curves",
+ "pasta_curves 0.4.1",
  "paste",
  "rand",
  "rand_core",
@@ -2687,7 +2710,7 @@ dependencies = [
 [[package]]
 name = "keccak256"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "env_logger 0.9.3",
  "eth-types",
@@ -2976,7 +2999,7 @@ dependencies = [
 [[package]]
 name = "mock"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "eth-types",
  "ethers-core",
@@ -2992,7 +3015,7 @@ dependencies = [
 [[package]]
 name = "mpt-zktrie"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "eth-types",
  "halo2-mpt-circuits",
@@ -3278,6 +3301,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pasta_curves"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3e57598f73cc7e1b2ac63c79c517b31a0877cd7c402cdcaa311b5208de7a095"
+dependencies = [
+ "blake2b_simd",
+ "ff 0.13.0",
+ "group 0.13.0",
+ "lazy_static",
+ "rand",
+ "static_assertions",
+ "subtle",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3450,10 +3488,19 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 [[package]]
 name = "poseidon"
 version = "0.2.0"
+source = "git+https://github.com/scroll-tech/poseidon.git?branch=main#5787dd3d2ce7a9e9601a035c396ac0c03449b54d"
+dependencies = [
+ "halo2curves 0.1.0",
+ "subtle",
+]
+
+[[package]]
+name = "poseidon"
+version = "0.2.0"
 source = "git+https://github.com/scroll-tech/poseidon.git?branch=scroll-dev-0220#2fb4a2385bada39b50dce12fe50cb80d2fd33476"
 dependencies = [
  "group 0.12.1",
- "halo2curves",
+ "halo2curves 0.3.1",
  "subtle",
 ]
 
@@ -3611,7 +3658,7 @@ checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 [[package]]
 name = "prover"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "aggregator",
  "anyhow",
@@ -4291,6 +4338,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_arrays"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38636132857f68ec3d5f3eb121166d2af33cb55174c4d5ff645db6165cbef0fd"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.193"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4508,7 +4564,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "poseidon",
+ "poseidon 0.2.0 (git+https://github.com/scroll-tech/poseidon.git?branch=scroll-dev-0220)",
  "rand",
  "revm",
  "rlp",
@@ -5589,7 +5645,7 @@ dependencies = [
 [[package]]
 name = "zkevm-circuits"
 version = "0.1.0"
-source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#cfcda5b7ed8207904f3db2b310bcefa397508f15"
+source = "git+https://github.com/morph-l2/zkevm-circuits.git?branch=dev4844#f4f4ed0698c95e8ffb437e53041b80204445b788"
 dependencies = [
  "array-init",
  "bls12_381 0.7.0 (git+https://github.com/morph-l2/bls12_381.git?branch=eip4844)",
