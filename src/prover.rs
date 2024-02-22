@@ -249,14 +249,4 @@ async fn get_chunk_traces(
     Some(chunk_traces)
 }
 
-#[tokio::test]
-async fn test() {
-    use std::fs::File;
-    use std::io::Write;
-
-    let protocol: Vec<u8> = vec![1, 2, 3, 4];
-    std::fs::create_dir_all("configs").unwrap();
-    let mut params_file = File::create("configs/chunk.protocol").unwrap();
-    params_file.write_all(&protocol[..]).unwrap();
-}
 
