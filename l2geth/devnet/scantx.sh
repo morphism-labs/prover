@@ -7,7 +7,7 @@ while true; do
     
     response=$(curl -s -X POST -H "Content-Type: application/json" -d "$data" http://localhost:6688/)
     
-    tx_count=$(echo $response | jq -r '.result')
+    tx_count=$(echo $response | grep -o '"result":"[^"]*"' | awk -F '"' '{print $4}')
     
     if [ "$tx_count" != "0x0" ]; then
         echo "Block $block_number has $tx_count transactions."
