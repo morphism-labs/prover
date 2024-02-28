@@ -136,7 +136,6 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
         };
 
         let partial_result_bytes = block_to_blob(&chunk_witness).ok();
-        index += partial_result_bytes.unwrap().len() / 32;
 
         let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
 
@@ -175,6 +174,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
         params_file.write_all(&protocol[..]).unwrap();
 
         chunk_proofs.push((chunk_hash, chunk_proof));
+        index += partial_result_bytes.unwrap().len() / 32;
     }
     if chunk_proofs.len() != chunk_traces.len() {
         log::error!("chunk proofs len err, batchIndex = {:#?} ", batch_index);

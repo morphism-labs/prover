@@ -1,4 +1,4 @@
-FROM  morph-geth:latest
+FROM ethereum/client-go:latest
 
 RUN mkdir -p /l2geth/keystore
 
