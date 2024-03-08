@@ -133,9 +133,9 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     challenge_point_bytes[0] = 0;
     let challenge_point = U256::from(&challenge_point_bytes);
     // let challenge_point = U256::from(128);
-    Fp::from_bytes(&block.challenge_point.to_le_bytes()).unwrap();
+    Fp::from_bytes(&challenge_point.to_le_bytes()).unwrap();
 
-    
+
     let (proof, y) = match KzgProof::compute_kzg_proof(
         &Blob::from_bytes(&batch_blob).unwrap(),
         &challenge_point.to_le_bytes().into(),
