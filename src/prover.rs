@@ -129,15 +129,14 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     let mut pre: Vec<u8> = vec![];
     pre.extend(commitment.to_bytes().to_vec());
     pre.extend(batch_data_hash);
-    let mut challenge_point: U256 = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
-    let mut challenge_point_bytes = challenge_point.to_le_bytes();
+    let mut challenge_point_bytes = keccak256(pre.as_slice());
     challenge_point_bytes[0] = 0;
-    challenge_point = U256::from_little_endian(&challenge_point_bytes);
+    let challenge_point = U256::from_little_endian(&challenge_point_bytes);
     // let challenge_point = U256::from(128);
 
     let (proof, y) = match KzgProof::compute_kzg_proof(
         &Blob::from_bytes(&batch_blob).unwrap(),
-        &challenge_point_bytes.into(),
+        &challenge_point.to_le_bytes().into(),
         &kzg_settings,
     ) {
         Ok((proof, y)) => (proof, y),
@@ -223,7 +222,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
         let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof_with_index(
             chunk_trace.to_vec(),
             batch_commit,
-            challenge_point.to_le_bytes(),
+            challenge_point,
             index,
             partial_result,
             None,
