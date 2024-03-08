@@ -223,7 +223,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
         let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof_with_index(
             chunk_trace.to_vec(),
             batch_commit,
-            challenge_point,
+            challenge_point.to_le_bytes(),
             index,
             partial_result,
             None,
