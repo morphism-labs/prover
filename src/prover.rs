@@ -131,7 +131,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     pre.extend(batch_data_hash);
     let mut challenge_point_bytes = keccak256(pre.as_slice());
     challenge_point_bytes[0] = 0;
-    let challenge_point = U256::from_little_endian(&challenge_point_bytes);
+    let challenge_point = U256::from(&challenge_point_bytes);
     // let challenge_point = U256::from(128);
 
     let (proof, y) = match KzgProof::compute_kzg_proof(
