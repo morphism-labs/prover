@@ -131,7 +131,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     pre.extend(batch_data_hash);
     let mut challenge_point: U256 = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
     let mut challenge_point_bytes = challenge_point.to_le_bytes();
-    challenge_point_bytes[0] = 0;
+    challenge_point_bytes[challenge_point_bytes.len() - 1] = 0;
     challenge_point = U256::from(challenge_point_bytes);
     // let challenge_point = U256::from(128);
 
