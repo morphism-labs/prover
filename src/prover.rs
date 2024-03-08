@@ -189,8 +189,8 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                     let reverse: Vec<u8> = chunk.iter().rev().cloned().collect();
                     result.push(Fp::from_bytes(reverse.as_slice().try_into().unwrap()).unwrap());
                 }
-                partial_result = U256::from(
-                    poly_eval_partial(
+                partial_result = U256::from_little_endian(
+                    &poly_eval_partial(
                         result,
                         Fp::from_bytes(&chunk_witness.challenge_point.to_le_bytes()).unwrap(),
                         omega,
