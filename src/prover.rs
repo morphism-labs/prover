@@ -199,7 +199,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                     )
                     .to_bytes(),
                 );
-                chunk_witness.partial_result = partial_result;
+                chunk_witness.partial_result = partial_result.to_le_bytes().into();
             }
             Err(e) => {
                 log::error!("chunk-hash: block_to_blob failed: {}", e);
