@@ -1,7 +1,9 @@
 use crate::utils::{
-    get_block_traces_by_number, GENERATE_EVM_VERIFIER, PROVER_L2_RPC, PROVER_PARAMS_DIR, PROVER_PROOF_DIR,
-    PROVE_RESULT, PROVE_TIME, SCROLL_PROVER_ASSETS_DIR,
+    get_block_traces_by_number, GENERATE_EVM_VERIFIER, MAINNET_KZG_TRUSTED_SETUP, PROVER_L2_RPC, PROVER_PARAMS_DIR,
+    PROVER_PROOF_DIR, PROVE_RESULT, PROVE_TIME, SCROLL_PROVER_ASSETS_DIR,
 };
+use bls12_381::Scalar as Fp;
+use c_kzg::{Blob, KzgCommitment, KzgProof};
 use eth_types::{ToLittleEndian, U256};
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
@@ -18,6 +20,7 @@ use std::time::{Duration, Instant};
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
 use zkevm_circuits::blob_circuit::block_to_blob;
+use zkevm_circuits::blob_circuit::util::{poly_eval_partial, FP_S};
 
 const BLOB_DATA_SIZE: usize = 4096 * 32;
 
@@ -92,12 +95,16 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     // get batch_blob from chunks
     let mut batch_blob = [0u8; BLOB_DATA_SIZE];
     let mut offset = 0;
+    let mut data_hash_preimage = Vec::<u8>::new();
     for chunk_trace in chunk_traces.iter() {
         match chunk_trace_to_witness_block(chunk_trace.to_vec()) {
             Ok(witness) => {
                 let partial_result = block_to_blob(&witness).unwrap();
                 batch_blob[offset..partial_result.len()].copy_from_slice(&partial_result);
                 offset += partial_result.len();
+
+                let chunk_hash = ChunkHash::from_witness_block(&witness, false);
+                data_hash_preimage.extend_from_slice(chunk_hash.data_hash.as_bytes())
             }
             Err(e) => {
                 log::error!("convert trace to witness of batch = {:#?} error: {:#?}", batch_index, e);
@@ -106,21 +113,54 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             }
         };
     }
+    let batch_data_hash = keccak256(data_hash_preimage);
+
+    let kzg_settings: Arc<c_kzg::KzgSettings> = Arc::clone(&MAINNET_KZG_TRUSTED_SETUP);
+    let commitment = match KzgCommitment::blob_to_kzg_commitment(&Blob::from_bytes(&batch_blob).unwrap(), &kzg_settings)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("generate KzgCommitment of batch = {:#?} error: {:#?}", batch_index, e);
+            PROVE_RESULT.set(2);
+            return;
+        }
+    };
+
+    let mut pre: Vec<u8> = vec![];
+    pre.extend(commitment.to_bytes().to_vec());
+    pre.extend(batch_data_hash);
+    let challenge_point = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
+    // let challenge_point = U256::from(128);
+
+    let (proof, y) = match KzgProof::compute_kzg_proof(
+        &Blob::from_bytes(&batch_blob).unwrap(),
+        &challenge_point.to_le_bytes().into(),
+        &kzg_settings,
+    ) {
+        Ok((proof, y)) => (proof, y),
+        Err(e) => {
+            log::error!("compute kzg proof of batch = {:#?} error: {:#?}", batch_index, e);
+            PROVE_RESULT.set(2);
+            return;
+        }
+    };
+
+    // save 4844 kzg proof
+    // kzgData: [y(32) | commitment(48) | proof(48)]
+    // https://github.com/morph-l2/morph/blob/eip4844-contract-verify/contracts/contracts/L1/rollup/Rollup.sol
+    let mut blob_kzg = Vec::<u8>::new();
+    blob_kzg.extend_from_slice(y.as_slice());
+    blob_kzg.extend_from_slice(commitment.as_slice());
+    blob_kzg.extend_from_slice(proof.as_slice());
+    let mut params_file = File::create(SCROLL_PROVER_ASSETS_DIR.to_string() + "/blob_kzg.data").unwrap();
+    params_file.write_all(&blob_kzg[..]).unwrap();
 
     // todo: get batch_commit from eth trace
     let batch_commit: U256 = U256::from(0);
-
-    // challenge_point = keccak256(batch_commit||batchBlob)
-    let mut pre: Vec<u8> = vec![];
-    pre.extend(batch_commit.to_le_bytes().to_vec());
-    pre.extend(batch_blob);
-    // let challenge_point = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
-    let challenge_point = U256::from(128);
-
     let mut index = 0;
-    for chunk_trace in chunk_traces.iter(){
-        let partial_result: U256 = U256::from(0);
-        let chunk_witness = match chunk_trace_to_witness_block_with_index(
+    for chunk_trace in chunk_traces.iter() {
+        let mut partial_result: U256 = U256::from(0);
+        let mut chunk_witness = match chunk_trace_to_witness_block_with_index(
             chunk_trace.to_vec(),
             batch_commit,
             challenge_point,
@@ -137,6 +177,31 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
 
         let partial_result_bytes = block_to_blob(&chunk_witness).ok();
 
+        // compute partial_result from witness block;
+        let omega = Fp::from(123).pow(&[(FP_S - 12) as u64, 0, 0, 0]);
+        match block_to_blob(&chunk_witness) {
+            Ok(blob) => {
+                let mut result: Vec<Fp> = Vec::new();
+                for chunk in blob.chunks(32) {
+                    let reverse: Vec<u8> = chunk.iter().rev().cloned().collect();
+                    result.push(Fp::from_bytes(reverse.as_slice().try_into().unwrap()).unwrap());
+                }
+                partial_result = U256::from(
+                    poly_eval_partial(
+                        result,
+                        Fp::from_bytes(&chunk_witness.challenge_point.to_le_bytes()).unwrap(),
+                        omega,
+                        index,
+                    )
+                    .to_bytes(),
+                );
+                chunk_witness.partial_result = partial_result;
+            }
+            Err(e) => {
+                log::error!("chunk-hash: block_to_blob failed: {}", e);
+            }
+        }
+
         let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
 
         log::info!(
@@ -144,7 +209,12 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             batch_index,
             index
         );
-        log::info!("=========gen_chunk_proof_with_index, batch_commit= {:#?}, challenge_point= {:#?}, index= {:#?} ", batch_commit, challenge_point, index);
+        log::info!(
+            "=========gen_chunk_proof_with_index, batch_commit= {:#?}, challenge_point= {:#?}, index= {:#?} ",
+            batch_commit,
+            challenge_point,
+            index
+        );
 
         // Start chunk prove
         let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof_with_index(
@@ -248,5 +318,3 @@ async fn get_chunk_traces(
     }
     Some(chunk_traces)
 }
-
-
