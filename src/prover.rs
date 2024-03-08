@@ -129,10 +129,12 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     let mut pre: Vec<u8> = vec![];
     pre.extend(commitment.to_bytes().to_vec());
     pre.extend(batch_data_hash);
-    let challenge_point_kzg: U256 = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
-    let mut challenge_point_bytes = challenge_point_kzg.to_le_bytes();
+    let mut challenge_point: U256 = U256::from_little_endian(keccak256(pre.as_slice()).as_ref());
+    let mut challenge_point_bytes = challenge_point.to_le_bytes();
     challenge_point_bytes[0] = 0;
-    
+    challenge_point = U256::from(challenge_point_bytes);
+    // let challenge_point = U256::from(128);
+
     let (proof, y) = match KzgProof::compute_kzg_proof(
         &Blob::from_bytes(&batch_blob).unwrap(),
         &challenge_point_bytes.into(),
@@ -145,8 +147,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             return;
         }
     };
-    
-    let challenge_point = U256::from(128);
+
     // save 4844 kzg proof
     // kzgData: [y(32) | commitment(48) | proof(48)]
     // https://github.com/morph-l2/morph/blob/eip4844-contract-verify/contracts/contracts/L1/rollup/Rollup.sol
