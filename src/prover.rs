@@ -199,6 +199,8 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                     .to_bytes(),
                 );
                 log::info!(">>partial_result = {:#?}", partial_result.to_le_bytes());
+                Fp::from_bytes(&challenge_point.to_le_bytes()).unwrap();
+
                 chunk_witness.partial_result = partial_result;
             }
             Err(e) => {
