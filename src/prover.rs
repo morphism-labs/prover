@@ -135,7 +135,6 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     // let challenge_point = U256::from(128);
     Fp::from_bytes(&challenge_point.to_le_bytes()).unwrap();
 
-
     let (proof, y) = match KzgProof::compute_kzg_proof(
         &Blob::from_bytes(&batch_blob).unwrap(),
         &challenge_point.to_le_bytes().into(),
@@ -199,7 +198,8 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                     )
                     .to_bytes(),
                 );
-                chunk_witness.partial_result = partial_result.to_le_bytes().into();
+                log::info!(">>partial_result = {:#?}", partial_result.to_le_bytes());
+                chunk_witness.partial_result = partial_result;
             }
             Err(e) => {
                 log::error!("chunk-hash: block_to_blob failed: {}", e);
