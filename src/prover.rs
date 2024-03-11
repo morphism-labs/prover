@@ -4,7 +4,7 @@ use crate::utils::{
 };
 use bls12_381::Scalar as Fp;
 use c_kzg::{Blob, KzgCommitment, KzgProof};
-use eth_types::{ToLittleEndian, U256};
+use eth_types::{ToBigEndian, ToLittleEndian, U256};
 use ethers::providers::Provider;
 use ethers::utils::keccak256;
 use prover::aggregator::Prover as BatchProver;
@@ -137,7 +137,7 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
 
     let (proof, y) = match KzgProof::compute_kzg_proof(
         &Blob::from_bytes(&batch_blob).unwrap(),
-        &challenge_point.to_le_bytes().into(),
+        &challenge_point.to_be_bytes().into(),
         &kzg_settings,
     ) {
         Ok((proof, y)) => (proof, y),
