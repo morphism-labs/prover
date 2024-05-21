@@ -1,26 +1,27 @@
 use crate::utils::{
-    get_block_traces_by_number, GENERATE_EVM_VERIFIER, MAINNET_KZG_TRUSTED_SETUP, PROVER_L2_RPC, PROVER_PARAMS_DIR,
-    PROVER_PROOF_DIR, PROVE_RESULT, PROVE_TIME, SCROLL_PROVER_ASSETS_DIR,
+    get_block_traces_by_number, kzg_to_versioned_hash, GENERATE_EVM_VERIFIER, MAINNET_KZG_TRUSTED_SETUP, PROVER_L2_RPC,
+    PROVER_PARAMS_DIR, PROVER_PROOF_DIR, PROVE_RESULT, PROVE_TIME, SCROLL_PROVER_ASSETS_DIR,
 };
-use bls12_381::Scalar as Fp;
 use c_kzg::{Blob, KzgCommitment, KzgProof};
-use eth_types::{ToBigEndian, ToLittleEndian, U256};
+use ethers::abi::AbiEncode;
 use ethers::providers::Provider;
-use ethers::utils::keccak256;
+use ethers::types::U256;
+use ethers::utils::hex;
+use halo2_proofs::halo2curves::bn256::Fr;
 use prover::aggregator::Prover as BatchProver;
 use prover::config::{LayerId, LAYER4_DEGREE};
-use prover::utils::{chunk_trace_to_witness_block, chunk_trace_to_witness_block_with_index};
+use prover::utils::chunk_trace_to_witness_block;
 use prover::zkevm::Prover as ChunkProver;
-use prover::{BlockTrace, ChunkHash, ChunkProof, CompressionCircuit};
+use prover::{BatchHash, BlockTrace, ChunkHash, ChunkProof, CompressionCircuit, MAX_AGG_SNARKS};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
+use std::iter::repeat;
 use std::time::{Duration, Instant};
 use std::{sync::Arc, thread};
 use tokio::sync::Mutex;
-use zkevm_circuits::blob_circuit::block_to_blob;
-use zkevm_circuits::blob_circuit::util::{poly_eval_partial, FP_S};
+use zkevm_circuits::witness::Block;
 
 const BLOB_DATA_SIZE: usize = 4096 * 32;
 
@@ -32,7 +33,7 @@ pub struct ProveRequest {
     pub rpc: String,
 }
 
-/// Generate EVM Proof for block trace.
+/// Processes prove requests from a queue.
 pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
     let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
     log::info!("Waiting for prove request");
@@ -40,23 +41,20 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
         thread::sleep(Duration::from_millis(12000));
 
         // Step1. Get request from queue
-        let (batch_index, chunks) = {
-            let queue_lock = prove_queue.lock().await;
-            let req = match queue_lock.first() {
-                Some(req) => {
-                    log::info!(
-                        ">>Received prove request, batch index = {:#?}, chunks len = {:#?}",
-                        req.batch_index,
-                        req.chunks.len()
-                    );
-                    req
-                }
-                None => {
-                    log::debug!("no prove request");
-                    continue;
-                }
-            };
-            (req.batch_index, req.chunks.clone())
+        let (batch_index, chunks) = match prove_queue.lock().await.pop() {
+            Some(req) => {
+                log::info!(
+                    "received prove request, batch index = {:#?}, chunks len = {:#?}",
+                    req.batch_index,
+                    req.chunks.len()
+                );
+                log::debug!(">>chunks details = {:#?}", req.chunks);
+                (req.batch_index, req.chunks.clone())
+            }
+            None => {
+                log::info!("no prove request");
+                continue;
+            }
         };
 
         // Step2. Fetch trace
@@ -68,108 +66,41 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
                 continue;
             }
         };
-        log::info!("requesting trace of batch: {:#?}", batch_index);
+        log::info!("Requesting trace of batch: {:#?}", batch_index);
         let chunk_traces = match get_chunk_traces(batch_index, chunks, provider).await {
             Some(chunk_traces) => chunk_traces,
             None => vec![],
         };
         if chunk_traces.is_empty() {
-            prove_queue.lock().await.pop();
             PROVE_RESULT.set(2);
             continue;
         }
 
         // Step3. Generate evm proof
         generate_proof(batch_index, chunk_traces, &mut chunk_prover).await;
-        prove_queue.lock().await.pop();
     }
 }
 
+/// Generate EVM Proof for block trace.
 async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, chunk_prover: &mut ChunkProver) {
     let start = Instant::now();
 
     let proof_path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
     fs::create_dir_all(proof_path.clone()).unwrap();
-    let mut chunk_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
 
-    // get batch_blob from chunks
-    let mut batch_blob = [0u8; BLOB_DATA_SIZE];
-    let mut offset = 0;
-    let mut data_hash_preimage = Vec::<u8>::new();
-    for chunk_trace in chunk_traces.iter() {
-        match chunk_trace_to_witness_block(chunk_trace.to_vec()) {
-            Ok(witness) => {
-                let partial_result = block_to_blob(&witness).unwrap();
-                batch_blob[offset..offset + partial_result.len()].copy_from_slice(&partial_result);
-                offset += partial_result.len();
-
-                let chunk_hash = ChunkHash::from_witness_block(&witness, false);
-                data_hash_preimage.extend_from_slice(chunk_hash.data_hash.as_bytes())
-            }
-            Err(e) => {
-                log::error!("convert trace to witness of batch = {:#?} error: {:#?}", batch_index, e);
-                PROVE_RESULT.set(2);
-                return;
-            }
-        };
+    if let Err(err_str) = compute_and_save_kzg(&chunk_traces, batch_index, &proof_path) {
+        log::error!(
+            "compute_and_save_kzg of batch = {:#?} error: {:#?}",
+            batch_index,
+            err_str
+        );
+        PROVE_RESULT.set(2);
+        return;
     }
-    let batch_data_hash = keccak256(data_hash_preimage);
 
-    let kzg_settings: Arc<c_kzg::KzgSettings> = Arc::clone(&MAINNET_KZG_TRUSTED_SETUP);
-    let commitment = match KzgCommitment::blob_to_kzg_commitment(&Blob::from_bytes(&batch_blob).unwrap(), &kzg_settings)
-    {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("generate KzgCommitment of batch = {:#?} error: {:#?}", batch_index, e);
-            PROVE_RESULT.set(2);
-            return;
-        }
-    };
-
-    let mut pre: Vec<u8> = vec![];
-    pre.extend(commitment.to_bytes().to_vec());
-    pre.extend(batch_data_hash);
-    let mut challenge_point_bytes = keccak256(pre.as_slice());
-    challenge_point_bytes[0] = 0;
-    let challenge_point = U256::from(&challenge_point_bytes);
-    // let challenge_point = U256::from(128);
-    Fp::from_bytes(&challenge_point.to_le_bytes()).unwrap();
-
-    let (proof, y) = match KzgProof::compute_kzg_proof(
-        &Blob::from_bytes(&batch_blob).unwrap(),
-        &challenge_point.to_be_bytes().into(),
-        &kzg_settings,
-    ) {
-        Ok((proof, y)) => (proof, y),
-        Err(e) => {
-            log::error!("compute kzg proof of batch = {:#?} error: {:#?}", batch_index, e);
-            PROVE_RESULT.set(2);
-            return;
-        }
-    };
-
-    // save 4844 kzg proof
-    // kzgData: [y(32) | commitment(48) | proof(48)]
-    // https://github.com/morph-l2/morph/blob/eip4844-contract-verify/contracts/contracts/L1/rollup/Rollup.sol
-    let mut blob_kzg = Vec::<u8>::new();
-    blob_kzg.extend_from_slice(y.as_slice());
-    blob_kzg.extend_from_slice(commitment.as_slice());
-    blob_kzg.extend_from_slice(proof.as_slice());
-    let mut params_file = File::create(format!("{}/blob_kzg.data", proof_path.as_str())).unwrap();
-    params_file.write_all(&blob_kzg[..]).unwrap();
-
-    // todo: get batch_commit from eth trace
-    let batch_commit: U256 = U256::from(0);
-    let mut index = 0;
-    for chunk_trace in chunk_traces.iter() {
-        let mut partial_result: U256 = U256::from(0);
-        let mut chunk_witness = match chunk_trace_to_witness_block_with_index(
-            chunk_trace.to_vec(),
-            batch_commit,
-            challenge_point,
-            index,
-            partial_result,
-        ) {
+    let mut chunk_hashes_proofs: Vec<(ChunkHash, ChunkProof)> = vec![];
+    for (index, chunk_trace) in chunk_traces.iter().enumerate() {
+        let chunk_witness = match chunk_trace_to_witness_block(chunk_trace.to_vec()) {
             Ok(_witness) => _witness,
             Err(e) => {
                 log::error!("convert trace to witness of batch = {:#?} error: {:#?}", batch_index, e);
@@ -177,37 +108,6 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
                 return;
             }
         };
-
-        let partial_result_bytes = block_to_blob(&chunk_witness).ok();
-
-        // compute partial_result from witness block;
-        let omega = Fp::from(123).pow(&[(FP_S - 12) as u64, 0, 0, 0]);
-        match block_to_blob(&chunk_witness) {
-            Ok(blob) => {
-                let mut result: Vec<Fp> = Vec::new();
-                for chunk in blob.chunks(32) {
-                    let reverse: Vec<u8> = chunk.iter().rev().cloned().collect();
-                    result.push(Fp::from_bytes(reverse.as_slice().try_into().unwrap()).unwrap());
-                }
-                partial_result = U256::from_little_endian(
-                    &poly_eval_partial(
-                        result,
-                        Fp::from_bytes(&chunk_witness.challenge_point.to_le_bytes()).unwrap(),
-                        omega,
-                        index,
-                    )
-                    .to_bytes(),
-                );
-                log::info!(">>partial_result = {:#?}", partial_result.to_le_bytes());
-                Fp::from_bytes(&partial_result.to_le_bytes()).unwrap();
-
-                chunk_witness.partial_result = partial_result;
-            }
-            Err(e) => {
-                log::error!("chunk-hash: block_to_blob failed: {}", e);
-            }
-        }
-
         let chunk_hash = ChunkHash::from_witness_block(&chunk_witness, false);
 
         log::info!(
@@ -215,50 +115,35 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
             batch_index,
             index
         );
-        log::info!(
-            "=========gen_chunk_proof_with_index, batch_commit= {:#?}, challenge_point= {:#?}, index= {:#?} ",
-            batch_commit,
-            challenge_point,
-            index
-        );
-
         // Start chunk prove
-        let chunk_proof: ChunkProof = match chunk_prover.gen_chunk_proof_with_index(
-            chunk_trace.to_vec(),
-            batch_commit,
-            challenge_point,
-            index,
-            partial_result,
-            None,
-            None,
-            Some(proof_path.as_str()),
-        ) {
-            Ok(proof) => {
-                log::info!(">>chunk_{:#?} prove complate, batch index = {:#?}", index, batch_index);
-                proof
-            }
-            Err(e) => {
-                log::error!("chunk in batch_{:#?} prove err: {:#?}", batch_index, e);
-                PROVE_RESULT.set(2);
-                return;
-            }
-        };
+        let chunk_proof: ChunkProof =
+            match chunk_prover.gen_chunk_proof(chunk_trace.to_vec(), None, None, Some(proof_path.as_str())) {
+                Ok(proof) => {
+                    log::info!(">>chunk_{:#?} prove complate, batch index = {:#?}", index, batch_index);
+                    proof
+                }
+                Err(e) => {
+                    log::error!("chunk in batch_{:#?} prove err: {:#?}", batch_index, e);
+                    PROVE_RESULT.set(2);
+                    return;
+                }
+            };
 
         //save chunk.protocol
         let protocol = &chunk_proof.protocol;
         let mut params_file = File::create(SCROLL_PROVER_ASSETS_DIR.to_string() + "/chunk.protocol").unwrap();
         params_file.write_all(&protocol[..]).unwrap();
 
-        chunk_proofs.push((chunk_hash, chunk_proof));
-        index += partial_result_bytes.unwrap().len() / 32;
+        chunk_hashes_proofs.push((chunk_hash, chunk_proof));
     }
-    if chunk_proofs.len() != chunk_traces.len() {
+    if chunk_hashes_proofs.len() != chunk_traces.len() {
         log::error!("chunk proofs len err, batchIndex = {:#?} ", batch_index);
         return;
     }
+
     log::info!(">>Starting batch prove, batch index = {:#?}", batch_index);
     let mut batch_prover = BatchProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
-    let batch_proof = batch_prover.gen_agg_evm_proof(chunk_proofs, None, Some(proof_path.clone().as_str()));
+    let batch_proof = batch_prover.gen_agg_evm_proof(chunk_hashes_proofs, None, Some(proof_path.clone().as_str()));
 
     // Start batch prove
     match batch_proof {
@@ -279,6 +164,118 @@ async fn generate_proof(batch_index: u64, chunk_traces: Vec<Vec<BlockTrace>>, ch
     let minutes = duration.as_secs() / 60;
     PROVE_TIME.set(minutes.try_into().unwrap());
     return;
+}
+
+fn compute_and_save_kzg(
+    chunk_traces: &Vec<Vec<BlockTrace>>,
+    batch_index: u64,
+    proof_path: &String,
+) -> Result<(), String> {
+    // Sequencer trace to witness.
+    let mut blocks: Vec<Block<Fr>> = vec![];
+    for trace in chunk_traces {
+        let block = match chunk_trace_to_witness_block(trace.to_vec()) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("batch_{:#?} chunk_trace_to_witness_block err: {:#?}", batch_index, e);
+                return Err("chunk trace to witness fail".to_string());
+            }
+        };
+        blocks.push(block);
+    }
+    // Witness to chunkhash
+    let mut chunk_hashes: Vec<ChunkHash> = blocks
+        .iter()
+        .map(|block| ChunkHash::from_witness_block(&block, false))
+        .collect();
+
+    if chunk_hashes.is_empty() {
+        return Err("chunk_hashes is empty".to_string());
+    }
+
+    // Padding
+    let number_of_valid_chunks = chunk_hashes.len();
+    if number_of_valid_chunks < MAX_AGG_SNARKS {
+        let mut padding_chunk_hash = chunk_hashes.last().unwrap().clone();
+        padding_chunk_hash.is_padding = true;
+        chunk_hashes.extend(repeat(padding_chunk_hash).take(MAX_AGG_SNARKS - number_of_valid_chunks));
+    }
+    log::debug!(
+        "lastest_hash_withdraw_root: {:?}",
+        chunk_hashes[MAX_AGG_SNARKS - 1].withdraw_root
+    );
+
+    log::debug!(
+        "prev_state_root of batch_{:?} = {:#?}",
+        batch_index,
+        hex::encode(&chunk_hashes[0].prev_state_root)
+    );
+
+    let blob = BatchHash::construct(&chunk_hashes).blob_assignments();
+    let challenge = blob.challenge; // z
+    let evaluation = blob.evaluation; // y
+    let mut blob_bytes = [0u8; BLOB_DATA_SIZE];
+    for (index, value) in blob.coefficients.iter().enumerate() {
+        value.to_big_endian(&mut blob_bytes[index * 32..(index + 1) * 32]);
+    }
+    let kzg_settings: Arc<c_kzg::KzgSettings> = Arc::clone(&MAINNET_KZG_TRUSTED_SETUP);
+    let commitment = match KzgCommitment::blob_to_kzg_commitment(&Blob::from_bytes(&blob_bytes).unwrap(), &kzg_settings)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Err(format!(
+                "generate KzgCommitment of batch = {:#?} error: {:#?}",
+                batch_index, e
+            ));
+        }
+    };
+    let versioned_hash = kzg_to_versioned_hash(commitment.to_bytes().to_vec().as_slice());
+    log::info!(
+        "=========> blob_versioned_hash of batch_{:?} = {:#?}",
+        batch_index,
+        hex::encode(&versioned_hash)
+    );
+    let mut z = [0u8; 32];
+    challenge.to_big_endian(&mut z);
+    let (proof, y) =
+        match KzgProof::compute_kzg_proof(&Blob::from_bytes(&blob_bytes).unwrap(), &z.into(), &kzg_settings) {
+            Ok((proof, y)) => (proof, y),
+            Err(e) => {
+                return Err(format!(
+                    "compute kzg proof of batch = {:#?} error: {:#?}",
+                    batch_index, e
+                ));
+            }
+        };
+
+    log::debug!(
+        "=========> y_from_barycentric = {:#?}, y_from_compute_kzg_proof = {:#?}",
+        hex::encode(evaluation.encode()),
+        hex::encode(y.as_slice())
+    );
+    if evaluation != U256::from_big_endian(y.as_slice()) {
+        return Err("y_from_barycentric != y_from_compute_kzg_proof".to_string());
+    }
+
+    // Save 4844 kzgData
+    // | z       | y       | kzg_commitment | kzg_proof |
+    // |---------|---------|----------------|-----------|
+    // | bytes32 | bytes32 | bytes48        | bytes48   |
+    let mut blob_kzg = Vec::with_capacity(160);
+    blob_kzg.extend_from_slice(z.as_slice());
+    blob_kzg.extend_from_slice(y.as_slice());
+    blob_kzg.extend_from_slice(commitment.as_slice());
+    blob_kzg.extend_from_slice(proof.as_slice());
+
+    let mut params_file = File::create(format!("{}/blob_kzg.data", proof_path.as_str())).unwrap();
+    match params_file.write_all(&blob_kzg[..]) {
+        Ok(()) => (),
+        Err(e) => {
+            return Err(format!("save kzg proof of batch = {:#?} error: {:#?}", batch_index, e));
+        }
+    };
+
+    Ok(())
 }
 
 fn generate_evm_verifier(mut batch_prover: BatchProver, proof: prover::BatchProof) {
@@ -323,4 +320,45 @@ async fn get_chunk_traces(
         chunk_traces.push(chunk_trace)
     }
     Some(chunk_traces)
+}
+
+#[allow(dead_code)]
+fn save_trace(batch_index: u64, chunk_traces: &Vec<Vec<BlockTrace>>) {
+    let path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
+    fs::create_dir_all(path.clone()).unwrap();
+    let file = File::create(format!("{}/chunk_traces.json", path.as_str())).unwrap();
+    let writer = BufWriter::new(file);
+
+    serde_json::to_writer_pretty(writer, &chunk_traces).unwrap();
+
+    log::info!("chunk_traces of batch_index = {:#?} saved", batch_index);
+}
+
+#[cfg(test)]
+fn load_trace(batch_index: u64) -> Vec<Vec<BlockTrace>> {
+    use std::io::BufReader;
+
+    let path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
+    let file = File::open(format!("{}/chunk_traces.json", path.as_str())).unwrap();
+    let reader = BufReader::new(file);
+
+    let chunk_traces: Vec<Vec<BlockTrace>> = serde_json::from_reader(reader).unwrap();
+    return chunk_traces;
+}
+
+#[tokio::test]
+async fn test_generate_proof() {
+    use dotenv::dotenv;
+
+    dotenv().ok();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
+    let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
+    log::info!("Chunk_prover initialized");
+
+    let chunk_traces = load_trace(17);
+    log::info!("Loading traces from file successful");
+
+    log::info!("Starting generate proof");
+    generate_proof(17, chunk_traces, &mut chunk_prover).await;
 }
