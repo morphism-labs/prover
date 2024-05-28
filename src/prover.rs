@@ -76,7 +76,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             continue;
         }
 
-        save_trace(batch_index, &chunk_traces);
+        // save_trace(batch_index, &chunk_traces);
 
         // Step3. Generate evm proof
         generate_proof(batch_index, chunk_traces, &mut chunk_prover).await;
@@ -358,9 +358,9 @@ async fn test_generate_proof() {
     let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
     log::info!("Chunk_prover initialized");
 
-    let chunk_traces = load_trace(17);
+    let chunk_traces = load_trace(101);
     log::info!("Loading traces from file successful");
 
     log::info!("Starting generate proof");
-    generate_proof(17, chunk_traces, &mut chunk_prover).await;
+    generate_proof(101, chunk_traces, &mut chunk_prover).await;
 }
