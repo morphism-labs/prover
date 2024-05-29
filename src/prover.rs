@@ -76,7 +76,7 @@ pub async fn prove_for_queue(prove_queue: Arc<Mutex<Vec<ProveRequest>>>) {
             continue;
         }
 
-        // save_trace(batch_index, &chunk_traces);
+        save_trace(batch_index, &chunk_traces);
 
         // Step3. Generate evm proof
         generate_proof(batch_index, chunk_traces, &mut chunk_prover).await;
