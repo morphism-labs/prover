@@ -324,6 +324,17 @@ async fn get_chunk_traces(
     Some(chunk_traces)
 }
 
+pub async fn prove_for_file(batch_index: u64) {
+    let mut chunk_prover = ChunkProver::from_dirs(PROVER_PARAMS_DIR.as_str(), SCROLL_PROVER_ASSETS_DIR.as_str());
+    log::info!("Chunk_prover initialized");
+
+    let chunk_traces = load_trace(batch_index);
+    log::info!("Loading traces from file successful");
+
+    log::info!("Starting generate proof");
+    generate_proof(101, chunk_traces, &mut chunk_prover).await;
+}
+
 #[allow(dead_code)]
 fn save_trace(batch_index: u64, chunk_traces: &Vec<Vec<BlockTrace>>) {
     let path = PROVER_PROOF_DIR.to_string() + format!("/batch_{}", batch_index).as_str();
@@ -336,7 +347,6 @@ fn save_trace(batch_index: u64, chunk_traces: &Vec<Vec<BlockTrace>>) {
     log::info!("chunk_traces of batch_index = {:#?} saved", batch_index);
 }
 
-#[cfg(test)]
 fn load_trace(batch_index: u64) -> Vec<Vec<BlockTrace>> {
     use std::io::BufReader;
 
